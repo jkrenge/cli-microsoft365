@@ -6,6 +6,7 @@ import Command from '../../Command.js';
 import GlobalOptions from '../../GlobalOptions.js';
 import { Logger } from '../../cli/Logger.js';
 import request from '../../request.js';
+import { mailSenderWhitelist } from '../../utils/mailSenderWhitelist.js';
 import commands from './commands.js';
 
 interface CommandArgs {
@@ -162,7 +163,16 @@ class RequestCommand extends Command {
         }
       }
       else {
-        const res = await request.execute<string>(config);
+        let res = await request.execute<any>(config);
+        if (mailSenderWhitelist.shouldFilterInInteractiveMode() &&
+          this.isGraphMailMessageRequest(url) &&
+          typeof res === 'object' &&
+          res !== null) {
+          const filterResult = mailSenderWhitelist.filterResponse(res);
+          res = filterResult.filteredResponse;
+          await mailSenderWhitelist.logFilteredSummary(logger, filterResult.filteredCount);
+        }
+
         await logger.log(res);
       }
     }
@@ -187,6 +197,30 @@ class RequestCommand extends Command {
     }
 
     return url;
+  }
+
+  private isGraphMailMessageRequest(url: string): boolean {
+    try {
+      const parsedUrl = new URL(url);
+      if (parsedUrl.hostname.toLowerCase() !== 'graph.microsoft.com') {
+        return false;
+      }
+
+      const pathName = parsedUrl.pathname.toLowerCase();
+      if (!pathName.startsWith('/v1.0/') && !pathName.startsWith('/beta/')) {
+        return false;
+      }
+
+      const graphPath = pathName.replace(/^\/(v1\.0|beta)\//, '');
+      const isSupportedMailboxPath = graphPath.startsWith('me/messages') ||
+        graphPath.startsWith('me/mailfolders/') ||
+        graphPath.startsWith('users/');
+
+      return isSupportedMailboxPath && graphPath.includes('/messages');
+    }
+    catch {
+      return false;
+    }
   }
 }
 

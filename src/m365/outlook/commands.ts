@@ -10,6 +10,7 @@ export default {
   MESSAGE_LIST: `${prefix} message list`,
   MESSAGE_MOVE: `${prefix} message move`,
   MESSAGE_REMOVE: `${prefix} message remove`,
+  MESSAGE_WHITELIST: `${prefix} message whitelist`,
   REPORT_MAILACTIVITYCOUNTS: `${prefix} report mailactivitycounts`,
   REPORT_MAILACTIVITYUSERCOUNTS: `${prefix} report mailactivityusercounts`,
   REPORT_MAILACTIVITYUSERDETAIL: `${prefix} report mailactivityuserdetail`,

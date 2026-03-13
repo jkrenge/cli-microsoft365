@@ -8,6 +8,7 @@ import { CommandError } from '../../../../Command.js';
 import request from '../../../../request.js';
 import { telemetry } from '../../../../telemetry.js';
 import { accessToken } from '../../../../utils/accessToken.js';
+import { mailSenderWhitelist } from '../../../../utils/mailSenderWhitelist.js';
 import { pid } from '../../../../utils/pid.js';
 import { session } from '../../../../utils/session.js';
 import { sinonUtil } from '../../../../utils/sinonUtil.js';
@@ -113,7 +114,10 @@ describe(commands.MESSAGE_GET, () => {
     sinonUtil.restore([
       request.get,
       accessToken.isAppOnlyAccessToken,
-      cli.getSettingWithDefaultValue
+      cli.getSettingWithDefaultValue,
+      mailSenderWhitelist.filterResponse,
+      mailSenderWhitelist.logFilteredSummary,
+      mailSenderWhitelist.shouldFilterInInteractiveMode
     ]);
   });
 
@@ -142,6 +146,28 @@ describe(commands.MESSAGE_GET, () => {
 
     await command.action(logger, { options: { verbose: true, id: messageId } });
     assert(loggerLogSpy.calledWith(emailResponse));
+  });
+
+  it('filters a message from a non-whitelisted sender in interactive mode', async () => {
+    sinon.stub(request, 'get').callsFake(async (opts) => {
+      if (opts.url === `https://graph.microsoft.com/v1.0/me/messages/${messageId}`) {
+        return emailResponse;
+      }
+
+      throw `Invalid request`;
+    });
+
+    sinon.stub(mailSenderWhitelist, 'shouldFilterInInteractiveMode').returns(true);
+    sinon.stub(mailSenderWhitelist, 'filterResponse').returns({
+      filteredCount: 1,
+      filteredResponse: {}
+    });
+    const logFilteredSummaryStub = sinon.stub(mailSenderWhitelist, 'logFilteredSummary').resolves();
+
+    await command.action(logger, { options: { id: messageId } });
+
+    assert(loggerLogSpy.calledWith({}));
+    assert(logFilteredSummaryStub.calledOnceWith(logger, 1));
   });
 
   it('retrieves specific message using delegated permissions from a shared mailbox using userName as option', async () => {

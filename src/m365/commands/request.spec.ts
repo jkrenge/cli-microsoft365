@@ -9,6 +9,7 @@ import { Logger } from '../../cli/Logger.js';
 import { CommandError } from '../../Command.js';
 import request from '../../request.js';
 import { telemetry } from '../../telemetry.js';
+import { mailSenderWhitelist } from '../../utils/mailSenderWhitelist.js';
 import { pid } from '../../utils/pid.js';
 import { session } from '../../utils/session.js';
 import { sinonUtil } from '../../utils/sinonUtil.js';
@@ -73,7 +74,10 @@ describe(commands.REQUEST, () => {
   afterEach(() => {
     sinonUtil.restore([
       request.execute,
-      fs.createWriteStream
+      fs.createWriteStream,
+      mailSenderWhitelist.filterResponse,
+      mailSenderWhitelist.logFilteredSummary,
+      mailSenderWhitelist.shouldFilterInInteractiveMode
     ]);
   });
 
@@ -238,6 +242,39 @@ describe(commands.REQUEST, () => {
       }
     });
     assert(loggerLogSpy.calledWith(mockSPOWebJSONResponse));
+  });
+
+  it('filters Graph mail responses in interactive mode', async () => {
+    const graphMailResponse = {
+      value: [
+        {
+          from: {
+            emailAddress: {
+              address: 'unknown@fabrikam.com'
+            }
+          },
+          subject: 'blocked'
+        }
+      ]
+    };
+    const filteredResponse = { value: [] };
+
+    sinon.stub(request, 'execute').resolves(graphMailResponse);
+    sinon.stub(mailSenderWhitelist, 'shouldFilterInInteractiveMode').returns(true);
+    sinon.stub(mailSenderWhitelist, 'filterResponse').returns({
+      filteredCount: 1,
+      filteredResponse
+    });
+    const logFilteredSummaryStub = sinon.stub(mailSenderWhitelist, 'logFilteredSummary').resolves();
+
+    await command.action(logger, {
+      options: {
+        url: 'https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages'
+      }
+    });
+
+    assert(loggerLogSpy.calledOnceWith(filteredResponse));
+    assert(logFilteredSummaryStub.calledOnceWith(logger, 1));
   });
 
   it('successfully executes a POST request to a SharePoint API endpoint', async () => {

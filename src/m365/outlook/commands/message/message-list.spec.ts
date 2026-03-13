@@ -9,6 +9,7 @@ import request from '../../../../request.js';
 import { telemetry } from '../../../../telemetry.js';
 import { pid } from '../../../../utils/pid.js';
 import { session } from '../../../../utils/session.js';
+import { mailSenderWhitelist } from '../../../../utils/mailSenderWhitelist.js';
 import { sinonUtil } from '../../../../utils/sinonUtil.js';
 import commands from '../../commands.js';
 import command from './message-list.js';
@@ -230,7 +231,10 @@ describe(commands.MESSAGE_LIST, () => {
       request.get,
       cli.getSettingWithDefaultValue,
       cli.handleMultipleResultsFound,
-      accessToken.isAppOnlyAccessToken
+      accessToken.isAppOnlyAccessToken,
+      mailSenderWhitelist.filterMessages,
+      mailSenderWhitelist.logFilteredSummary,
+      mailSenderWhitelist.shouldFilterInInteractiveMode
     ]);
   });
 
@@ -345,6 +349,29 @@ describe(commands.MESSAGE_LIST, () => {
 
     await command.action(logger, { options: {} });
     assert(loggerLogSpy.calledOnceWith(emailOutput));
+  });
+
+  it('filters non-whitelisted messages in interactive mode', async () => {
+    sinon.stub(request, 'get').callsFake(async (opts) => {
+      if (opts.url === `https://graph.microsoft.com/v1.0/me/messages?$top=100`) {
+        return emailResponse;
+      }
+
+      throw 'Invalid request';
+    });
+
+    sinon.stub(mailSenderWhitelist, 'shouldFilterInInteractiveMode').returns(true);
+    sinon.stub(mailSenderWhitelist, 'filterMessages').returns({
+      allowed: [emailOutput[0]],
+      blocked: [emailOutput[1], emailOutput[2]],
+      filteredCount: 2
+    });
+    const logFilteredSummaryStub = sinon.stub(mailSenderWhitelist, 'logFilteredSummary').resolves();
+
+    await command.action(logger, { options: {} });
+
+    assert(loggerLogSpy.calledOnceWith([emailOutput[0]]));
+    assert(logFilteredSummaryStub.calledOnceWith(logger, 2));
   });
 
   it('lists messages for the currently logged in user with a specified startTime', async () => {

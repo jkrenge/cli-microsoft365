@@ -1,17 +1,16 @@
 import { Message } from '@microsoft/microsoft-graph-types';
+import auth from '../../../../Auth.js';
+import { cli } from '../../../../cli/cli.js';
 import { Logger } from '../../../../cli/Logger.js';
 import GlobalOptions from '../../../../GlobalOptions.js';
 import request, { CliRequestOptions } from '../../../../request.js';
 import { formatting } from '../../../../utils/formatting.js';
-import { odata } from '../../../../utils/odata.js';
+import { accessToken } from '../../../../utils/accessToken.js';
+import { mailSenderWhitelist } from '../../../../utils/mailSenderWhitelist.js';
+import { validation } from '../../../../utils/validation.js';
 import GraphCommand from '../../../base/GraphCommand.js';
 import commands from '../../commands.js';
 import { Outlook } from '../../Outlook.js';
-import { cli } from '../../../../cli/cli.js';
-import { validation } from '../../../../utils/validation.js';
-import { accessToken } from '../../../../utils/accessToken.js';
-import auth from '../../../../Auth.js';
-import { mailSenderWhitelist } from '../../../../utils/mailSenderWhitelist.js';
 
 interface CommandArgs {
   options: Options;
@@ -22,17 +21,20 @@ interface Options extends GlobalOptions {
   folderName?: string;
   startTime?: string;
   endTime?: string;
+  top?: number;
   userId?: string;
   userName?: string;
 }
 
-class OutlookMessageListCommand extends GraphCommand {
+type ReviewAction = 'a' | 's' | 'd';
+
+class OutlookMessageWhitelistCommand extends GraphCommand {
   public get name(): string {
-    return commands.MESSAGE_LIST;
+    return commands.MESSAGE_WHITELIST;
   }
 
   public get description(): string {
-    return 'Gets all mail messages from the specified folder';
+    return 'Interactively review and whitelist mail senders';
   }
 
   constructor() {
@@ -52,6 +54,7 @@ class OutlookMessageListCommand extends GraphCommand {
         folderName: typeof args.options.folderName !== 'undefined',
         startTime: typeof args.options.startTime !== 'undefined',
         endTime: typeof args.options.endTime !== 'undefined',
+        top: args.options.top || 25,
         userId: typeof args.options.userId !== 'undefined',
         userName: typeof args.options.userName !== 'undefined'
       });
@@ -74,6 +77,9 @@ class OutlookMessageListCommand extends GraphCommand {
         option: '--endTime [endTime]'
       },
       {
+        option: '--top [top]'
+      },
+      {
         option: '--userId [userId]'
       },
       {
@@ -85,6 +91,10 @@ class OutlookMessageListCommand extends GraphCommand {
   #initValidators(): void {
     this.validators.push(
       async (args: CommandArgs) => {
+        if (!mailSenderWhitelist.shouldFilterInInteractiveMode()) {
+          return 'This command requires interactive mode. Enable prompts and run it from a terminal session.';
+        }
+
         if (args.options.startTime) {
           if (!validation.isValidISODateTime(args.options.startTime)) {
             return `'${args.options.startTime}' is not a valid ISO date string for option startTime.`;
@@ -103,8 +113,15 @@ class OutlookMessageListCommand extends GraphCommand {
           }
         }
 
-        if (args.options.startTime && args.options.endTime && new Date(args.options.startTime) >= new Date(args.options.endTime)) {
+        if (args.options.startTime &&
+          args.options.endTime &&
+          new Date(args.options.startTime) >= new Date(args.options.endTime)) {
           return 'startTime must be before endTime.';
+        }
+
+        if (typeof args.options.top !== 'undefined' &&
+          (!Number.isInteger(args.options.top) || args.options.top <= 0)) {
+          return 'top must be a positive integer.';
         }
 
         if (args.options.userId && !validation.isValidGuid(args.options.userId)) {
@@ -137,24 +154,25 @@ class OutlookMessageListCommand extends GraphCommand {
     );
   }
 
-  public defaultProperties(): string[] | undefined {
-    return ['subject', 'receivedDateTime'];
-  }
-
   public async commandAction(logger: Logger, args: CommandArgs): Promise<void> {
     try {
-      if (!args.options.userId && !args.options.userName && accessToken.isAppOnlyAccessToken(auth.connection.accessTokens[auth.defaultResource].accessToken)) {
+      if (!args.options.userId &&
+        !args.options.userName &&
+        accessToken.isAppOnlyAccessToken(auth.connection.accessTokens[auth.defaultResource].accessToken)) {
         throw 'You must specify either the userId or userName option when using app-only permissions.';
       }
 
-      const userUrl = args.options.userId || args.options.userName ? `users/${args.options.userId || formatting.encodeQueryParameter(args.options.userName!)}` : 'me';
+      const userUrl = args.options.userId || args.options.userName
+        ? `users/${args.options.userId || formatting.encodeQueryParameter(args.options.userName!)}`
+        : 'me';
 
       const folderId = await this.getFolderId(userUrl, args.options);
-      const folderUrl: string = folderId ? `/mailFolders/${folderId}` : '';
-      let requestUrl = `${this.resource}/v1.0/${userUrl}${folderUrl}/messages?$top=100`;
+      const folderUrl = folderId ? `/mailFolders/${folderId}` : '';
+      const top = args.options.top || 25;
+      let requestUrl = `${this.resource}/v1.0/${userUrl}${folderUrl}/messages?$top=${top}&$orderby=receivedDateTime desc`;
 
       if (args.options.startTime || args.options.endTime) {
-        const filters = [];
+        const filters: string[] = [];
 
         if (args.options.startTime) {
           filters.push(`receivedDateTime ge ${args.options.startTime}`);
@@ -168,18 +186,98 @@ class OutlookMessageListCommand extends GraphCommand {
         }
       }
 
-      let messages = await odata.getAllItems<Message>(requestUrl);
-      if (mailSenderWhitelist.shouldFilterInInteractiveMode()) {
-        const filterResult = mailSenderWhitelist.filterMessages(messages);
-        messages = filterResult.allowed;
-        await mailSenderWhitelist.logFilteredSummary(logger, filterResult.filteredCount);
+      const requestOptions: CliRequestOptions = {
+        url: requestUrl,
+        headers: {
+          accept: 'application/json;odata.metadata=none'
+        },
+        responseType: 'json'
+      };
+
+      const response = await request.get<{ value: Message[]; }>(requestOptions);
+      const allMessages = response.value || [];
+      const skippedMessageKeys = new Set<string>();
+      let blockedMessages = this.getBlockedMessages(allMessages, skippedMessageKeys);
+      let domainsAdded = 0;
+      let sendersAdded = 0;
+      let skipped = 0;
+
+      if (blockedMessages.length === 0) {
+        await logger.log({
+          domainsAdded,
+          filePath: mailSenderWhitelist.getFilePath(),
+          remaining: blockedMessages.length,
+          sendersAdded,
+          skipped
+        });
+        return;
       }
 
-      await logger.log(messages);
+      while (blockedMessages.length > 0) {
+        const selectedMessage = blockedMessages[0];
+        const senderAddress = mailSenderWhitelist.getSenderAddress(selectedMessage);
+        const senderDomain = mailSenderWhitelist.getSenderDomain(selectedMessage);
+
+        await logger.logToStderr(`Sender: ${senderAddress || 'unknown sender'}`);
+        await logger.logToStderr(`Subject: ${selectedMessage.subject || '(no subject)'}`);
+        if (senderDomain) {
+          await logger.logToStderr(`Whitelist target: ${senderDomain}`);
+        }
+
+        const action = await cli.promptForInput({
+          message: 'Choose action: [a]dd to whitelist, add specific [s]ender to whitelist, [d]o not add to whitelist',
+          validate: (value) => {
+            const normalizedValue = value.trim().toLowerCase();
+            if (['a', 's', 'd'].includes(normalizedValue)) {
+              return true;
+            }
+
+            return 'Choose a, s, or d.';
+          }
+        }) as ReviewAction;
+
+        if (action === 'd') {
+          skipped++;
+          skippedMessageKeys.add(this.getMessageKey(selectedMessage));
+        }
+        else if (action === 'a' && senderDomain) {
+          if (mailSenderWhitelist.addDomain(senderDomain)) {
+            domainsAdded++;
+            await logger.logToStderr(`Whitelisted domain ${senderDomain}`);
+          }
+        }
+        else if (action === 's' && senderAddress) {
+          if (mailSenderWhitelist.addSender(senderAddress)) {
+            sendersAdded++;
+            await logger.logToStderr(`Whitelisted sender ${senderAddress}`);
+          }
+        }
+
+        blockedMessages = this.getBlockedMessages(allMessages, skippedMessageKeys);
+      }
+
+      await logger.log({
+        domainsAdded,
+        filePath: mailSenderWhitelist.getFilePath(),
+        remaining: blockedMessages.length,
+        sendersAdded,
+        skipped
+      });
     }
     catch (err: any) {
       this.handleRejectedODataJsonPromise(err);
     }
+  }
+
+  private getBlockedMessages(messages: Message[], skippedMessageKeys: Set<string>): Message[] {
+    return mailSenderWhitelist
+      .filterMessages(messages)
+      .blocked
+      .filter(message => !skippedMessageKeys.has(this.getMessageKey(message)));
+  }
+
+  private getMessageKey(message: Message): string {
+    return message.id || `${mailSenderWhitelist.getSenderAddress(message) || 'unknown'}|${message.receivedDateTime || ''}|${message.subject || ''}`;
   }
 
   private async getFolderId(userUrl: string, options: Options): Promise<string> {
@@ -211,7 +309,7 @@ class OutlookMessageListCommand extends GraphCommand {
 
     if (response.value.length > 1) {
       const resultAsKeyValuePair = formatting.convertArrayToHashTable('id', response.value);
-      const result = await cli.handleMultipleResultsFound<{ id: string }>(`Multiple folders with name '${options.folderName!}' found.`, resultAsKeyValuePair);
+      const result = await cli.handleMultipleResultsFound<{ id: string; }>(`Multiple folders with name '${options.folderName!}' found.`, resultAsKeyValuePair);
       return result.id;
     }
 
@@ -219,4 +317,4 @@ class OutlookMessageListCommand extends GraphCommand {
   }
 }
 
-export default new OutlookMessageListCommand();
+export default new OutlookMessageWhitelistCommand();

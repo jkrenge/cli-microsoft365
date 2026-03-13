@@ -5,6 +5,7 @@ import request, { CliRequestOptions } from '../../../../request.js';
 import { accessToken } from '../../../../utils/accessToken.js';
 import GraphCommand from '../../../base/GraphCommand.js';
 import commands from '../../commands.js';
+import { mailSenderWhitelist } from '../../../../utils/mailSenderWhitelist.js';
 
 interface CommandArgs {
   options: Options;
@@ -96,7 +97,13 @@ class OutlookMessageGetCommand extends GraphCommand {
         responseType: 'json'
       };
 
-      const res = await request.get<any>(requestOptions);
+      let res = await request.get<any>(requestOptions);
+      if (mailSenderWhitelist.shouldFilterInInteractiveMode()) {
+        const filterResult = mailSenderWhitelist.filterResponse(res);
+        res = filterResult.filteredResponse;
+        await mailSenderWhitelist.logFilteredSummary(logger, filterResult.filteredCount);
+      }
+
       await logger.log(res);
     }
     catch (err: any) {
