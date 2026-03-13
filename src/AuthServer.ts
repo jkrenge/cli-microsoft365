@@ -4,6 +4,7 @@ import { ParsedUrlQuery } from 'querystring';
 import { Auth, InteractiveAuthorizationCodeResponse, InteractiveAuthorizationErrorResponse, Connection } from './Auth.js';
 import { Logger } from './cli/Logger.js';
 import { browserUtil } from './utils/browserUtil.js';
+import { networkAccess } from './utils/networkAccess.js';
 
 export class AuthServer {
   // assigned through this.initializeServer() hence !
@@ -79,9 +80,14 @@ export class AuthServer {
 
     let body: string = "";
     if (hasCode === true) {
-      body = '<script type="text/JavaScript">setTimeout(function(){ window.location = "https://pnp.github.io/cli-microsoft365/"; },10000);</script>';
-      body += '<p><b>You have logged into CLI for Microsoft 365!</b></p>';
-      body += '<p>You can close this window, or we will redirect you to the <a href="https://pnp.github.io/cli-microsoft365/">CLI for Microsoft 365</a> documentation in 10 seconds.</p>';
+      body = '<p><b>You have logged into CLI for Microsoft 365!</b></p>';
+      if (networkAccess.isRestricted()) {
+        body += '<p>You can close this window.</p>';
+      }
+      else {
+        body += '<script type="text/JavaScript">setTimeout(function(){ window.location = "https://pnp.github.io/cli-microsoft365/"; },10000);</script>';
+        body += '<p>You can close this window, or we will redirect you to the <a href="https://pnp.github.io/cli-microsoft365/">CLI for Microsoft 365</a> documentation in 10 seconds.</p>';
+      }
 
       this.resolve(<InteractiveAuthorizationCodeResponse>{
         code: queryString.code as string,

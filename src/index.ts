@@ -2,6 +2,7 @@
 
 import { cli } from './cli/cli.js';
 import { app } from './utils/app.js';
+import { networkAccess } from './utils/networkAccess.js';
 
 await (async () => {
   // required to make console.log() in combination with piped output synchronous
@@ -12,7 +13,8 @@ await (async () => {
     (process.stdout as any)._handle.setBlocking(true);
   }
 
-  if (!process.env.CLIMICROSOFT365_NOUPDATE) {
+  if (!process.env.CLIMICROSOFT365_NOUPDATE &&
+    !networkAccess.isRestricted()) {
     const updateNotifier = await import('update-notifier');
     updateNotifier.default({ pkg: app.packageJson() as any }).notify({ defer: false });
   }

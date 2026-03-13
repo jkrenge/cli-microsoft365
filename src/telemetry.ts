@@ -1,6 +1,7 @@
 import appInsights from './appInsights.js';
 import { cli } from './cli/cli.js';
 import { settingsNames } from './settingsNames.js';
+import { networkAccess } from './utils/networkAccess.js';
 import { pid } from './utils/pid.js';
 import { session } from './utils/session.js';
 
@@ -31,7 +32,8 @@ async function trackTelemetry(object: any): Promise<void> {
 
 export const telemetry = {
   trackEvent: async (commandName: string, properties: any, exception?: any): Promise<void> => {
-    if (cli.getSettingWithDefaultValue<boolean>(settingsNames.disableTelemetry, false)) {
+    if (networkAccess.isRestricted() ||
+      cli.getSettingWithDefaultValue<boolean>(settingsNames.disableTelemetry, false)) {
       return;
     }
 

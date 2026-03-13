@@ -4,6 +4,7 @@ import auth, { Auth, CloudType } from './Auth.js';
 import { Logger } from './cli/Logger.js';
 import { app } from './utils/app.js';
 import { formatting } from './utils/formatting.js';
+import { networkAccess } from './utils/networkAccess.js';
 import { timings } from './cli/timings.js';
 import { timersUtil } from './utils/timersUtil.js';
 
@@ -161,6 +162,7 @@ class Request {
 
     this.updateRequestForCloudType(options, auth.connection.cloudType);
     this.removeDoubleSlashes(options);
+    networkAccess.assertAllowed(options.url!.toString());
 
     try {
       let accessToken = '';

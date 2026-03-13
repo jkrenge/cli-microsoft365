@@ -8,6 +8,8 @@ import { pid } from './utils/pid.js';
 import { session } from './utils/session.js';
 import { sinonUtil } from './utils/sinonUtil.js';
 
+const env = Object.assign({}, process.env);
+
 describe('Telemetry', () => {
   let trackEventStub: sinon.SinonStub;
   let trackExceptionStub: sinon.SinonStub;
@@ -20,6 +22,7 @@ describe('Telemetry', () => {
   });
 
   afterEach(() => {
+    process.env = Object.assign({}, env);
     sinonUtil.restore([
       cli.getSettingWithDefaultValue,
       (telemetry as any).trackTelemetry
@@ -33,6 +36,7 @@ describe('Telemetry', () => {
   });
 
   it(`doesn't log an event when disableTelemetry is set`, async () => {
+    process.env.CLIMICROSOFT365_ALLOW_EXTERNAL = '1';
     sinon.stub(cli, 'getSettingWithDefaultValue').callsFake((settingName, defaultValue) => {
       if (settingName === settingsNames.disableTelemetry) {
         return true;
@@ -46,6 +50,7 @@ describe('Telemetry', () => {
   });
 
   it('logs an event when disableTelemetry is not set', async () => {
+    process.env.CLIMICROSOFT365_ALLOW_EXTERNAL = '1';
     sinon.stub(cli, 'getSettingWithDefaultValue').callsFake((settingName, defaultValue) => {
       if (settingName === settingsNames.disableTelemetry) {
         return false;
@@ -59,6 +64,7 @@ describe('Telemetry', () => {
   });
 
   it(`doesn't log the exception when disableTelemetry is set`, async () => {
+    process.env.CLIMICROSOFT365_ALLOW_EXTERNAL = '1';
     sinon.stub(cli, 'getSettingWithDefaultValue').callsFake((settingName, defaultValue) => {
       if (settingName === settingsNames.disableTelemetry) {
         return true;
@@ -72,6 +78,7 @@ describe('Telemetry', () => {
   });
 
   it('logs the exception when disableTelemetry is not set', async () => {
+    process.env.CLIMICROSOFT365_ALLOW_EXTERNAL = '1';
     sinon.stub(cli, 'getSettingWithDefaultValue').callsFake((settingName, defaultValue) => {
       if (settingName === settingsNames.disableTelemetry) {
         return false;
@@ -85,6 +92,7 @@ describe('Telemetry', () => {
   });
 
   it(`logs an empty string for shell if it couldn't resolve shell process name`, async () => {
+    process.env.CLIMICROSOFT365_ALLOW_EXTERNAL = '1';
     sinon.stub(cli, 'getSettingWithDefaultValue').callsFake((settingName, defaultValue) => {
       if (settingName === settingsNames.disableTelemetry) {
         return false;
@@ -100,6 +108,7 @@ describe('Telemetry', () => {
   });
 
   it(`fails silently when submitting telemetry fails`, async () => {
+    process.env.CLIMICROSOFT365_ALLOW_EXTERNAL = '1';
     sinon.stub(cli, 'getSettingWithDefaultValue').callsFake((settingName, defaultValue) => {
       if (settingName === settingsNames.disableTelemetry) {
         return false;
@@ -112,5 +121,15 @@ describe('Telemetry', () => {
 
     await telemetry.trackEvent('foo bar', {});
     assert.ok(true);
+  });
+
+  it(`doesn't log an event when external access is restricted`, async () => {
+    process.env.CLIMICROSOFT365_ALLOW_EXTERNAL = '0';
+    process.env.CLIMICROSOFT365_RESTRICT_EXTERNAL = '1';
+    sinon.stub(cli, 'getSettingWithDefaultValue').callsFake((_settingName, defaultValue) => defaultValue);
+
+    await telemetry.trackEvent('foo bar', {});
+    assert(trackEventStub.notCalled, 'trackEventStub called');
+    assert(trackExceptionStub.notCalled, 'trackExceptionStub called');
   });
 });
