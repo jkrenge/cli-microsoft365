@@ -8,7 +8,7 @@ describe('utils/networkAccess', () => {
     process.env = Object.assign({}, env);
   });
 
-  it('restricts external access by default when running from the local source tree', () => {
+  it('restricts external access by default', () => {
     delete process.env.CLIMICROSOFT365_ALLOW_EXTERNAL;
     delete process.env.CLIMICROSOFT365_RESTRICT_EXTERNAL;
 
@@ -33,7 +33,7 @@ describe('utils/networkAccess', () => {
 
     assert.throws(
       () => networkAccess.assertAllowed('https://haveibeenpwned.com/api/v3/breachedaccount/example@contoso.com'),
-      /blocked in local dev mode/
+      /blocked by default/
     );
   });
 

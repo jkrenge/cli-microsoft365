@@ -1,9 +1,3 @@
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = fileURLToPath(new URL('.', import.meta.url));
-
 const allowedExactHosts = new Set([
   '127.0.0.1',
   '::1',
@@ -73,10 +67,6 @@ function getAdditionalAllowedHosts(): string[] {
     .filter(host => host.length > 0);
 }
 
-function isLocalSourceBuild(): boolean {
-  return fs.existsSync(path.join(__dirname, '..', '..', 'src'));
-}
-
 export const networkAccess = {
   isRestricted(): boolean {
     if (parseBoolean(process.env.CLIMICROSOFT365_ALLOW_EXTERNAL) === true) {
@@ -88,7 +78,7 @@ export const networkAccess = {
       return configuredValue;
     }
 
-    return isLocalSourceBuild();
+    return true;
   },
 
   isAllowedHost(host: string): boolean {
@@ -116,7 +106,7 @@ export const networkAccess = {
     }
 
     throw new Error(
-      `External network access to '${host}' is blocked in local dev mode. ` +
+      `External network access to '${host}' is blocked by default. ` +
       `Set CLIMICROSOFT365_ALLOW_EXTERNAL=1 to disable the restriction ` +
       `or add the host to CLIMICROSOFT365_ALLOWED_HOSTS.`
     );

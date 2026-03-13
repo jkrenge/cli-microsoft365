@@ -246,4 +246,15 @@ CLI for Microsoft 365 is a [Microsoft 365 & Power Platform Community](https://pn
 
 **THIS CODE IS PROVIDED *AS IS* WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING ANY IMPLIED WARRANTIES OF FITNESS FOR A PARTICULAR PURPOSE, MERCHANTABILITY, OR NON-INFRINGEMENT.**
 
+## Fork Changes
+
+> [!NOTE]
+> This fork blocks non-Microsoft 365 outbound traffic by default. Set `CLIMICROSOFT365_ALLOW_EXTERNAL=1` to disable the restriction, or add specific hosts with `CLIMICROSOFT365_ALLOWED_HOSTS=host1,host2`.
+
+> [!NOTE]
+> Interactive Outlook mail access is filtered through a local sender whitelist stored in `~/.cli-m365-mail-sender-whitelist.json`. Use `m365 outlook message whitelist` to review blocked messages and add either sender domains or specific sender addresses.
+
+> [!NOTE]
+> This fork supports GitHub-based installation by building on the target machine during install. Example: `npm install -g github:jkrenge/cli-microsoft365`.
+
 ![telemetry](https://telemetry.sharepointpnp.com/cli-microsoft365/readme)
