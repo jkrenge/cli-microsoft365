@@ -1,0 +1,124 @@
+import Global from '../../_global.mdx';
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# outlook message whitelist
+
+Interactively review blocked mail senders and add them to the local whitelist
+
+## Usage
+
+```sh
+m365 outlook message whitelist [options]
+```
+
+## Options
+
+```md definition-list
+`--folderName [folderName]`
+: Name of the folder from which to review messages.
+
+`--folderId [folderId]`
+: ID of the folder from which to review messages.
+
+`--startTime [startTime]`
+: Time indicating the inclusive start of a time range when the message was received. This should be defined as a valid ISO 8601 string (2021-12-16T18:28:48.6964197Z).
+
+`--endTime [endTime]`
+: Time indicating the exclusive end of a time range when the message was received. This should be defined as a valid ISO 8601 string (2021-12-16T18:28:48.6964197Z).
+
+`--top [top]`
+: Number of most recent messages to review. Defaults to `25`.
+
+`--userId [userId]`
+: The Microsoft Entra user ID. Specify either `userId` or `userName`, not both. This option is required when using application permissions.
+
+`--userName [userName]`
+: User principal name of the user. Specify either `userId` or `userName`, not both. This option is required when using application permissions.
+```
+
+<Global />
+
+## Permissions
+
+<Tabs>
+  <TabItem value="Delegated">
+
+  | Resource        | Permissions    |
+  |-----------------|----------------|
+  | Microsoft Graph | Mail.ReadBasic |
+
+  </TabItem>
+  <TabItem value="Application">
+
+  | Resource        | Permissions         |
+  |-----------------|---------------------|
+  | Microsoft Graph | Mail.ReadBasic.All  |
+
+  </TabItem>
+</Tabs>
+
+## Remarks
+
+This command is intended for interactive terminal sessions and reviews only messages whose sender address or sender domain is not already present in the local whitelist file `~/.cli-m365-mail-sender-whitelist.json`.
+
+For each reviewed message, the CLI shows the sender address and subject, then prompts for one of the following actions:
+
+- `[a]dd to whitelist` adds the sender domain to the whitelist
+- `add specific [s]ender to whitelist` adds the full sender email address to the whitelist
+- `[d]o not add to whitelist` skips the message without changing the whitelist
+
+The whitelist is stored locally on the machine and is used automatically by [outlook message list](./message-list.mdx), [outlook message get](./message-get.mdx), and interactive `request` calls to Microsoft Graph mail message endpoints.
+
+## Examples
+
+Review blocked senders in the Inbox.
+
+```sh
+m365 outlook message whitelist --folderName inbox
+```
+
+Review the 20 most recent blocked messages in the Inbox.
+
+```sh
+m365 outlook message whitelist --folderName inbox --top 20
+```
+
+Review blocked messages for a shared mailbox.
+
+```sh
+m365 outlook message whitelist --folderName inbox --userName sharedmailbox@contoso.com
+```
+
+## Response
+
+<Tabs>
+  <TabItem value="JSON">
+
+  ```json
+  {
+    "domainsAdded": 1,
+    "filePath": "/Users/john/.cli-m365-mail-sender-whitelist.json",
+    "remaining": 0,
+    "sendersAdded": 0,
+    "skipped": 2
+  }
+  ```
+
+  </TabItem>
+  <TabItem value="Text">
+
+  ```text
+  domainsAdded: 1
+  filePath    : /Users/john/.cli-m365-mail-sender-whitelist.json
+  remaining   : 0
+  sendersAdded: 0
+  skipped     : 2
+  ```
+
+  </TabItem>
+</Tabs>
+
+## More information
+
+- Well-known folder names: [https://learn.microsoft.com/graph/api/resources/mailfolder?view=graph-rest-1.0](https://learn.microsoft.com/graph/api/resources/mailfolder?view=graph-rest-1.0)

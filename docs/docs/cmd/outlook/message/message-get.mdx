@@ -46,6 +46,14 @@ m365 outlook message get [options]
   </TabItem>
 </Tabs>
 
+## Remarks
+
+In interactive terminal sessions, the command filters out messages whose sender address or sender domain is not present in the local whitelist file `~/.cli-m365-mail-sender-whitelist.json`.
+
+Use [outlook message whitelist](./message-whitelist.mdx) to review blocked messages and add either a sender domain or a specific sender address to the whitelist.
+
+The sender whitelist filter is not applied in non-interactive usage.
+
 ## Examples
 
 Get a specific message using delegated permissions.

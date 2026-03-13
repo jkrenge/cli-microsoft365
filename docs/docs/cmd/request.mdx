@@ -51,6 +51,10 @@ You can simplify the request by using tokens for the `url` option. Following tok
 - `@graphbeta` resolves to `https://graph.microsoft.com/beta`
 - `@spo` resolves to the current SharePoint URL if available. You can set a SharePoint URL using the [spo set](./spo/spo-set.mdx) command.
 
+In interactive terminal sessions, responses from Microsoft Graph mail message endpoints are filtered using the local sender whitelist file `~/.cli-m365-mail-sender-whitelist.json`.
+
+Use [outlook message whitelist](./outlook/message/message-whitelist.mdx) to review blocked messages and add either a sender domain or a specific sender address to the whitelist.
+
 :::info
 
 When building the request, depending on the shell you use, you might need to escape all `$` characters in the URL, request headers, and the body. If you don't do it, the shell will treat it as a variable and will remove the following word from the request, breaking the request.
@@ -169,4 +173,3 @@ The responses below are an example based on the `url` option with the value 'htt
 
   </TabItem>
 </Tabs>
-
