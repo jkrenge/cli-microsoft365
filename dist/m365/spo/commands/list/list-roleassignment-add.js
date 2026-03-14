@@ -1,0 +1,163 @@
+var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (receiver, state, kind, f) {
+    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a getter");
+    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
+    return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
+};
+var _SpoListRoleAssignmentAddCommand_instances, _SpoListRoleAssignmentAddCommand_initTelemetry, _SpoListRoleAssignmentAddCommand_initOptions, _SpoListRoleAssignmentAddCommand_initValidators, _SpoListRoleAssignmentAddCommand_initOptionSets, _SpoListRoleAssignmentAddCommand_initTypes;
+import request from '../../../../request.js';
+import { entraGroup } from '../../../../utils/entraGroup.js';
+import { formatting } from '../../../../utils/formatting.js';
+import { spo } from '../../../../utils/spo.js';
+import { urlUtil } from '../../../../utils/urlUtil.js';
+import { validation } from '../../../../utils/validation.js';
+import SpoCommand from '../../../base/SpoCommand.js';
+import commands from '../../commands.js';
+class SpoListRoleAssignmentAddCommand extends SpoCommand {
+    get name() {
+        return commands.LIST_ROLEASSIGNMENT_ADD;
+    }
+    get description() {
+        return 'Adds a role assignment to list permissions';
+    }
+    constructor() {
+        super();
+        _SpoListRoleAssignmentAddCommand_instances.add(this);
+        __classPrivateFieldGet(this, _SpoListRoleAssignmentAddCommand_instances, "m", _SpoListRoleAssignmentAddCommand_initTelemetry).call(this);
+        __classPrivateFieldGet(this, _SpoListRoleAssignmentAddCommand_instances, "m", _SpoListRoleAssignmentAddCommand_initOptions).call(this);
+        __classPrivateFieldGet(this, _SpoListRoleAssignmentAddCommand_instances, "m", _SpoListRoleAssignmentAddCommand_initValidators).call(this);
+        __classPrivateFieldGet(this, _SpoListRoleAssignmentAddCommand_instances, "m", _SpoListRoleAssignmentAddCommand_initOptionSets).call(this);
+        __classPrivateFieldGet(this, _SpoListRoleAssignmentAddCommand_instances, "m", _SpoListRoleAssignmentAddCommand_initTypes).call(this);
+    }
+    async commandAction(logger, args) {
+        if (this.verbose) {
+            await logger.logToStderr(`Adding role assignment to list in site at ${args.options.webUrl}...`);
+        }
+        try {
+            let requestUrl = `${args.options.webUrl}/_api/web/`;
+            if (args.options.listId) {
+                requestUrl += `lists(guid'${formatting.encodeQueryParameter(args.options.listId)}')/`;
+            }
+            else if (args.options.listTitle) {
+                requestUrl += `lists/getByTitle('${formatting.encodeQueryParameter(args.options.listTitle)}')/`;
+            }
+            else if (args.options.listUrl) {
+                const listServerRelativeUrl = urlUtil.getServerRelativePath(args.options.webUrl, args.options.listUrl);
+                requestUrl += `GetList('${formatting.encodeQueryParameter(listServerRelativeUrl)}')/`;
+            }
+            const roleDefinitionId = await this.getRoleDefinitionId(args.options, logger);
+            let principalId = args.options.principalId;
+            if (args.options.upn) {
+                const user = await spo.ensureUser(args.options.webUrl, args.options.upn);
+                principalId = user.Id;
+            }
+            else if (args.options.groupName) {
+                const group = await spo.getGroupByName(args.options.webUrl, args.options.groupName, logger, this.verbose);
+                principalId = group.Id;
+            }
+            else if (args.options.entraGroupId || args.options.entraGroupName) {
+                if (this.verbose) {
+                    await logger.logToStderr('Retrieving group information...');
+                }
+                let group;
+                if (args.options.entraGroupId) {
+                    group = await entraGroup.getGroupById(args.options.entraGroupId);
+                }
+                else {
+                    group = await entraGroup.getGroupByDisplayName(args.options.entraGroupName);
+                }
+                const siteUser = await spo.ensureEntraGroup(args.options.webUrl, group);
+                principalId = siteUser.Id;
+            }
+            await this.addRoleAssignment(requestUrl, principalId, roleDefinitionId);
+        }
+        catch (err) {
+            this.handleRejectedODataJsonPromise(err);
+        }
+    }
+    async addRoleAssignment(requestUrl, principalId, roleDefinitionId) {
+        const requestOptions = {
+            url: `${requestUrl}roleassignments/addroleassignment(principalid='${principalId}',roledefid='${roleDefinitionId}')`,
+            headers: {
+                accept: 'application/json;odata=nometadata'
+            },
+            responseType: 'json'
+        };
+        return request.post(requestOptions);
+    }
+    async getRoleDefinitionId(options, logger) {
+        if (options.roleDefinitionId) {
+            return options.roleDefinitionId;
+        }
+        const roleDefinition = await spo.getRoleDefinitionByName(options.webUrl, options.roleDefinitionName, logger, this.verbose);
+        return roleDefinition.Id;
+    }
+}
+_SpoListRoleAssignmentAddCommand_instances = new WeakSet(), _SpoListRoleAssignmentAddCommand_initTelemetry = function _SpoListRoleAssignmentAddCommand_initTelemetry() {
+    this.telemetry.push((args) => {
+        Object.assign(this.telemetryProperties, {
+            listId: typeof args.options.listId !== 'undefined',
+            listTitle: typeof args.options.listTitle !== 'undefined',
+            listUrl: typeof args.options.listUrl !== 'undefined',
+            principalId: typeof args.options.principalId !== 'undefined',
+            upn: typeof args.options.upn !== 'undefined',
+            groupName: typeof args.options.groupName !== 'undefined',
+            entraGroupId: typeof args.options.entraGroupId !== 'undefined',
+            entraGroupName: typeof args.options.entraGroupName !== 'undefined',
+            roleDefinitionId: typeof args.options.roleDefinitionId !== 'undefined',
+            roleDefinitionName: typeof args.options.roleDefinitionName !== 'undefined'
+        });
+    });
+}, _SpoListRoleAssignmentAddCommand_initOptions = function _SpoListRoleAssignmentAddCommand_initOptions() {
+    this.options.unshift({
+        option: '-u, --webUrl <webUrl>'
+    }, {
+        option: '-i, --listId [listId]'
+    }, {
+        option: '-t, --listTitle [listTitle]'
+    }, {
+        option: '--listUrl [listUrl]'
+    }, {
+        option: '--principalId [principalId]'
+    }, {
+        option: '--upn [upn]'
+    }, {
+        option: '--groupName [groupName]'
+    }, {
+        option: '--entraGroupId [entraGroupId]'
+    }, {
+        option: '--entraGroupName [entraGroupName]'
+    }, {
+        option: '--roleDefinitionId [roleDefinitionId]'
+    }, {
+        option: '--roleDefinitionName [roleDefinitionName]'
+    });
+}, _SpoListRoleAssignmentAddCommand_initValidators = function _SpoListRoleAssignmentAddCommand_initValidators() {
+    this.validators.push(async (args) => {
+        const isValidSharePointUrl = validation.isValidSharePointUrl(args.options.webUrl);
+        if (isValidSharePointUrl !== true) {
+            return isValidSharePointUrl;
+        }
+        if (args.options.listId && !validation.isValidGuid(args.options.listId)) {
+            return `'${args.options.listId}' is not a valid GUID for option listId.`;
+        }
+        if (args.options.upn && !validation.isValidUserPrincipalName(args.options.upn)) {
+            return `'${args.options.upn}' is not a valid user principal name for option upn.`;
+        }
+        if (args.options.principalId && !validation.isValidPositiveInteger(args.options.principalId)) {
+            return `Specified principalId '${args.options.principalId}' is not a valid number.`;
+        }
+        if (args.options.entraGroupId && !validation.isValidGuid(args.options.entraGroupId)) {
+            return `'${args.options.entraGroupId}' is not a valid GUID for option entraGroupId.`;
+        }
+        if (args.options.roleDefinitionId && !validation.isValidPositiveInteger(args.options.roleDefinitionId)) {
+            return `Specified roleDefinitionId '${args.options.roleDefinitionId}' is not a valid number.`;
+        }
+        return true;
+    });
+}, _SpoListRoleAssignmentAddCommand_initOptionSets = function _SpoListRoleAssignmentAddCommand_initOptionSets() {
+    this.optionSets.push({ options: ['listId', 'listTitle', 'listUrl'] }, { options: ['principalId', 'upn', 'groupName', 'entraGroupId', 'entraGroupName'] }, { options: ['roleDefinitionId', 'roleDefinitionName'] });
+}, _SpoListRoleAssignmentAddCommand_initTypes = function _SpoListRoleAssignmentAddCommand_initTypes() {
+    this.types.string.push('webUrl', 'listId', 'listTitle', 'listUrl', 'upn', 'groupName', 'entraGroupId', 'entraGroupName', 'roleDefinitionName');
+};
+export default new SpoListRoleAssignmentAddCommand();
+//# sourceMappingURL=list-roleassignment-add.js.map

@@ -1,0 +1,273 @@
+var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (receiver, state, kind, f) {
+    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a getter");
+    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
+    return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
+};
+var _SpoCustomActionSetCommand_instances, _SpoCustomActionSetCommand_initTelemetry, _SpoCustomActionSetCommand_initOptions, _SpoCustomActionSetCommand_initValidators;
+import request from '../../../../request.js';
+import { formatting } from '../../../../utils/formatting.js';
+import { validation } from '../../../../utils/validation.js';
+import SpoCommand from '../../../base/SpoCommand.js';
+import { BasePermissions, PermissionKind } from '../../base-permissions.js';
+import commands from '../../commands.js';
+class SpoCustomActionSetCommand extends SpoCommand {
+    get name() {
+        return commands.CUSTOMACTION_SET;
+    }
+    get description() {
+        return 'Updates a user custom action for site or site collection';
+    }
+    /**
+     * Maps the base PermissionsKind enum to string array so it can
+     * more easily be used in validation or descriptions.
+     */
+    get permissionsKindMap() {
+        const result = [];
+        for (const kind in PermissionKind) {
+            if (typeof PermissionKind[kind] === 'number') {
+                result.push(kind);
+            }
+        }
+        return result;
+    }
+    constructor() {
+        super();
+        _SpoCustomActionSetCommand_instances.add(this);
+        __classPrivateFieldGet(this, _SpoCustomActionSetCommand_instances, "m", _SpoCustomActionSetCommand_initTelemetry).call(this);
+        __classPrivateFieldGet(this, _SpoCustomActionSetCommand_instances, "m", _SpoCustomActionSetCommand_initOptions).call(this);
+        __classPrivateFieldGet(this, _SpoCustomActionSetCommand_instances, "m", _SpoCustomActionSetCommand_initValidators).call(this);
+    }
+    async commandAction(logger, args) {
+        try {
+            let customAction;
+            if (!args.options.scope) {
+                args.options.scope = 'All';
+            }
+            if (args.options.scope.toLowerCase() !== "all") {
+                customAction = await this.updateCustomAction(args.options);
+            }
+            else {
+                customAction = await this.searchAllScopes(args.options);
+            }
+            if (this.verbose) {
+                if (customAction && customAction["odata.null"] === true) {
+                    await logger.logToStderr(`Custom action with id ${args.options.id} not found`);
+                }
+            }
+        }
+        catch (err) {
+            this.handleRejectedPromise(err);
+        }
+    }
+    async updateCustomAction(options) {
+        const requestBody = this.mapRequestBody(options);
+        const requestOptions = {
+            url: `${options.webUrl}/_api/${options.scope}/UserCustomActions('${formatting.encodeQueryParameter(options.id)}')`,
+            headers: {
+                accept: 'application/json;odata=nometadata',
+                'X-HTTP-Method': 'MERGE'
+            },
+            data: requestBody,
+            responseType: 'json'
+        };
+        return await request.post(requestOptions);
+    }
+    /**
+     * Merge request with `web` scope is send first.
+     * If custom action not found then
+     * another merge request is send with `site` scope.
+     */
+    async searchAllScopes(options) {
+        options.scope = "Web";
+        const webResult = await this.updateCustomAction(options);
+        if (webResult === undefined || webResult["odata.null"] !== true) {
+            return webResult;
+        }
+        options.scope = "Site";
+        const siteResult = await this.updateCustomAction(options);
+        return siteResult;
+    }
+    mapRequestBody(options) {
+        const requestBody = {};
+        if (options.location) {
+            requestBody.Location = options.location;
+        }
+        if (options.name) {
+            requestBody.Name = options.name;
+        }
+        if (options.title) {
+            requestBody.Title = options.title;
+        }
+        if (options.group) {
+            requestBody.Group = options.group;
+        }
+        if (options.description) {
+            requestBody.Description = options.description;
+        }
+        if (options.sequence) {
+            requestBody.Sequence = options.sequence;
+        }
+        if (options.registrationType) {
+            requestBody.RegistrationType = this.getRegistrationType(options.registrationType);
+        }
+        if (options.registrationId) {
+            requestBody.RegistrationId = options.registrationId.toString();
+        }
+        if (options.actionUrl) {
+            requestBody.Url = options.actionUrl;
+        }
+        if (options.imageUrl) {
+            requestBody.ImageUrl = options.imageUrl;
+        }
+        if (options.clientSideComponentId) {
+            requestBody.ClientSideComponentId = options.clientSideComponentId;
+        }
+        if (options.clientSideComponentProperties) {
+            requestBody.ClientSideComponentProperties = options.clientSideComponentProperties;
+        }
+        if (options.scriptBlock) {
+            requestBody.ScriptBlock = options.scriptBlock;
+        }
+        if (options.scriptSrc) {
+            requestBody.ScriptSrc = options.scriptSrc;
+        }
+        if (options.commandUIExtension) {
+            requestBody.CommandUIExtension = `${options.commandUIExtension}`;
+        }
+        if (options.rights) {
+            const permissions = new BasePermissions();
+            const rights = options.rights.split(',');
+            for (const item of rights) {
+                const kind = PermissionKind[item.trim()];
+                permissions.set(kind);
+            }
+            requestBody.Rights = {
+                High: permissions.high.toString(),
+                Low: permissions.low.toString()
+            };
+        }
+        return requestBody;
+    }
+    getRegistrationType(registrationType) {
+        switch (registrationType.toLowerCase()) {
+            case 'list':
+                return 1;
+            case 'contenttype':
+                return 2;
+            case 'progid':
+                return 3;
+            case 'filetype':
+                return 4;
+        }
+        return 0; // None
+    }
+}
+_SpoCustomActionSetCommand_instances = new WeakSet(), _SpoCustomActionSetCommand_initTelemetry = function _SpoCustomActionSetCommand_initTelemetry() {
+    this.telemetry.push((args) => {
+        Object.assign(this.telemetryProperties, {
+            location: args.options.location,
+            scope: args.options.scope || 'Web',
+            group: (!(!args.options.group)).toString(),
+            description: (!(!args.options.description)).toString(),
+            sequence: (!(!args.options.sequence)).toString(),
+            actionUrl: (!(!args.options.actionUrl)).toString(),
+            imageUrl: (!(!args.options.imageUrl)).toString(),
+            commandUIExtension: (!(!args.options.commandUIExtension)).toString(),
+            registrationId: args.options.registrationId,
+            registrationType: args.options.registrationType,
+            rights: args.options.rights,
+            scriptSrc: (!(!args.options.scriptSrc)).toString(),
+            scriptBlock: (!(!args.options.scriptBlock)).toString(),
+            clientSideComponentId: (!(!args.options.clientSideComponentId)).toString(),
+            clientSideComponentProperties: (!(!args.options.clientSideComponentProperties)).toString()
+        });
+    });
+}, _SpoCustomActionSetCommand_initOptions = function _SpoCustomActionSetCommand_initOptions() {
+    this.options.unshift({
+        option: '-u, --webUrl <webUrl>'
+    }, {
+        option: '-i, --id <id>'
+    }, {
+        option: '-n, --name [name]'
+    }, {
+        option: '-t, --title [title]'
+    }, {
+        option: '-l, --location [location]'
+    }, {
+        option: '-g, --group [group]'
+    }, {
+        option: '-d, --description [description]'
+    }, {
+        option: '--sequence [sequence]'
+    }, {
+        option: '--actionUrl [actionUrl]'
+    }, {
+        option: '--imageUrl [imageUrl]'
+    }, {
+        option: '-e, --commandUIExtension [commandUIExtension]'
+    }, {
+        option: '--registrationId [registrationId]'
+    }, {
+        option: '--registrationType [registrationType]',
+        autocomplete: ['None', 'List', 'ContentType', 'ProgId', 'FileType']
+    }, {
+        option: '--rights [rights]',
+        autocomplete: this.permissionsKindMap
+    }, {
+        option: '-s, --scope [scope]',
+        autocomplete: ['Site', 'Web', 'All']
+    }, {
+        option: '--scriptBlock [scriptBlock]'
+    }, {
+        option: '--scriptSrc [scriptSrc]'
+    }, {
+        option: '-c, --clientSideComponentId [clientSideComponentId]'
+    }, {
+        option: '-p, --clientSideComponentProperties [clientSideComponentProperties]'
+    });
+}, _SpoCustomActionSetCommand_initValidators = function _SpoCustomActionSetCommand_initValidators() {
+    this.validators.push(async (args) => {
+        if (validation.isValidGuid(args.options.id) === false) {
+            return `${args.options.id} is not valid. Custom action id (Guid) expected`;
+        }
+        const isValidSharePointUrl = validation.isValidSharePointUrl(args.options.webUrl);
+        if (isValidSharePointUrl !== true) {
+            return isValidSharePointUrl;
+        }
+        if (!args.options.title && !args.options.name && !args.options.location &&
+            !args.options.actionUrl && !args.options.clientSideComponentId && !args.options.clientSideComponentProperties &&
+            !args.options.commandUIExtension && !args.options.group && !args.options.imageUrl &&
+            !args.options.description && !args.options.registrationId && !args.options.registrationType &&
+            !args.options.rights && !args.options.scriptBlock && !args.options.scriptSrc &&
+            !args.options.sequence) {
+            return 'Please specify option to be updated';
+        }
+        if (args.options.scriptSrc && args.options.scriptBlock) {
+            return 'Either option scriptSrc or scriptBlock can be specified, but not both';
+        }
+        if (args.options.sequence && (args.options.sequence < 0 || args.options.sequence > 65536)) {
+            return 'Invalid option sequence. Expected value in range from 0 to 65536';
+        }
+        if (args.options.clientSideComponentId && validation.isValidGuid(args.options.clientSideComponentId) === false) {
+            return `ClientSideComponentId ${args.options.clientSideComponentId} is not a valid GUID`;
+        }
+        if (args.options.scope &&
+            args.options.scope !== 'Site' &&
+            args.options.scope !== 'Web' &&
+            args.options.scope !== 'All') {
+            return `${args.options.scope} is not a valid custom action scope. Allowed values are Site|Web|All`;
+        }
+        if (args.options.rights) {
+            const rights = args.options.rights.split(',');
+            for (const item of rights) {
+                const kind = PermissionKind[item.trim()];
+                if (!kind) {
+                    return `Rights option '${item}' is not recognized as valid PermissionKind choice. Please note it is case-sensitive`;
+                }
+            }
+        }
+        return true;
+    });
+};
+export default new SpoCustomActionSetCommand();
+//# sourceMappingURL=customaction-set.js.map

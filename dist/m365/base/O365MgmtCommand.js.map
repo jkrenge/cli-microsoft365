@@ -1,0 +1,1 @@
+{"version":3,"file":"O365MgmtCommand.js","sourceRoot":"","sources":["../../../src/m365/base/O365MgmtCommand.ts"],"names":[],"mappings":"AAAA,OAAO,OAAO,MAAM,kBAAkB,CAAC;AAEvC,MAAM,CAAC,OAAO,OAAgB,eAAgB,SAAQ,OAAO;IAC3D,IAAc,QAAQ;QACpB,OAAO,2BAA2B,CAAC;IACrC,CAAC;CACF"}

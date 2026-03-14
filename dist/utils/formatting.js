@@ -1,0 +1,194 @@
+import { parse } from 'csv-parse/sync';
+import chalk from 'chalk';
+import stripJsonComments from 'strip-json-comments';
+import { BasePermissions } from '../m365/spo/base-permissions.js';
+import { RoleType } from '../m365/spo/commands/roledefinition/RoleType.js';
+/**
+ * Has the particular check passed or failed
+ */
+export var CheckStatus;
+(function (CheckStatus) {
+    CheckStatus[CheckStatus["Success"] = 0] = "Success";
+    CheckStatus[CheckStatus["Failure"] = 1] = "Failure";
+    CheckStatus[CheckStatus["Information"] = 2] = "Information";
+    CheckStatus[CheckStatus["Warning"] = 3] = "Warning";
+})(CheckStatus || (CheckStatus = {}));
+export const formatting = {
+    escapeXml(s) {
+        if (!s) {
+            return s;
+        }
+        return s.toString().replace(/[<>&"]/g, (c) => {
+            let char = c;
+            switch (c) {
+                case '<':
+                    char = '&lt;';
+                    break;
+                case '>':
+                    char = '&gt;';
+                    break;
+                case '&':
+                    char = '&amp;';
+                    break;
+                case '"':
+                    char = '&quot;';
+                    break;
+            }
+            return char;
+        });
+    },
+    parseJsonWithBom(s) {
+        return JSON.parse(s.replace(/^\uFEFF/, ''));
+    },
+    /**
+     * Tries to parse a string as JSON. If it fails, returns the original string.
+     * @param value JSON string to parse.
+     * @returns JSON object or the original string if parsing fails.
+     */
+    tryParseJson(value) {
+        try {
+            if (typeof value !== 'string') {
+                return value;
+            }
+            return JSON.parse(value);
+        }
+        catch {
+            return value;
+        }
+    },
+    filterObject(obj, propertiesToInclude) {
+        const objKeys = Object.keys(obj);
+        return propertiesToInclude
+            .filter(prop => objKeys.includes(prop))
+            .reduce((filtered, key) => {
+            filtered[key] = obj[key];
+            return filtered;
+        }, {});
+    },
+    setFriendlyPermissions(response) {
+        response.forEach((r) => {
+            const permissions = new BasePermissions();
+            permissions.high = r.BasePermissions.High;
+            permissions.low = r.BasePermissions.Low;
+            r.BasePermissionsValue = permissions.parse();
+            r.RoleTypeKindValue = RoleType[r.RoleTypeKind];
+        });
+        return response;
+    },
+    parseCsvToJson(s, quoteChar = '"', delimiter = ',') {
+        return parse(s, {
+            quote: quoteChar,
+            delimiter: delimiter,
+            columns: true,
+            skipEmptyLines: true,
+            ltrim: true,
+            cast: true
+        });
+    },
+    encodeQueryParameter(value) {
+        if (!value) {
+            return value;
+        }
+        return encodeURIComponent(value).replace(/'/g, "''");
+    },
+    removeSingleLineComments(s) {
+        return stripJsonComments(s);
+    },
+    splitAndTrim(s) {
+        return s.split(',').map(c => c.trim());
+    },
+    openTypesEncoder(value) {
+        return value
+            .replace(/%/g, '%25')
+            .replace(/\./g, '%2E')
+            .replace(/:/g, '%3A')
+            .replace(/@/g, '%40')
+            .replace(/#/g, '%23');
+    },
+    /**
+     * Rewrites boolean values according to the definition:
+     * Booleans are case-insensitive, and are represented by the following values.
+     *   True: 1, yes, true, on
+     *   False: 0, no, false, off
+     * @value Stringified Boolean value to rewrite
+     * @returns A stringified boolean with the value 'true' or 'false'. Returns the original value if it does not comply with the definition.
+     */
+    rewriteBooleanValue(value) {
+        const argValue = value.toLowerCase();
+        switch (argValue) {
+            case '1':
+            case 'true':
+            case 'yes':
+            case 'on':
+                return 'true';
+            case '0':
+            case 'false':
+            case 'no':
+            case 'off':
+                return 'false';
+            default:
+                return value;
+        }
+    },
+    /**
+     * Converts an object into an xml:
+     * @obj the actual objec
+     * @returns A string containing the xml
+     */
+    objectToXml(obj) {
+        let xml = '';
+        for (const prop in obj) {
+            xml += "<" + prop + ">";
+            if (obj[prop] instanceof Array) {
+                for (const array in obj[prop]) {
+                    xml += this.objectToXml(new Object(obj[prop][array]));
+                }
+            }
+            else {
+                xml += obj[prop];
+            }
+            xml += "</" + prop + ">";
+        }
+        xml = xml.replace(/<\/?[0-9]{1,}>/g, '');
+        return xml;
+    },
+    getStatus(result, message) {
+        const primarySupported = process.platform !== 'win32' ||
+            process.env.CI === 'true' ||
+            process.env.TERM === 'xterm-256color';
+        const success = primarySupported ? '✔' : '√';
+        const failure = primarySupported ? '✖' : '×';
+        const information = 'i';
+        const warning = '!';
+        switch (result) {
+            case CheckStatus.Success:
+                return `${chalk.green(success)} ${message}`;
+            case CheckStatus.Failure:
+                return `${chalk.red(failure)} ${message}`;
+            case CheckStatus.Information:
+                return `${chalk.blue(information)} ${message}`;
+            case CheckStatus.Warning:
+                return `${chalk.yellow(warning)} ${message}`;
+        }
+    },
+    convertArrayToHashTable(key, array) {
+        const resultAsKeyValuePair = {};
+        array.forEach((obj) => {
+            resultAsKeyValuePair[obj[key]] = obj;
+        });
+        return resultAsKeyValuePair;
+    },
+    /**
+     * Extracts the GUID from a string in CSOM format.
+     * @param str The string to extract the GUID from
+     * @description The string should be in the format /Guid(XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX)/
+     * @returns The extracted GUID or the original string if no match is found
+     * @example /Guid(eae15efb-ac09-49b9-8906-e579efd622e4)/ => eae15efb-ac09-49b9-8906-e579efd622e4
+     */
+    extractCsomGuid(str) {
+        const guidPattern = /\/Guid\(([0-9a-f-]+)\)\//i;
+        const match = str.match(guidPattern);
+        return match ? match[1] : str;
+    }
+};
+//# sourceMappingURL=formatting.js.map

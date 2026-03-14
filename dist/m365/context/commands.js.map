@@ -1,0 +1,1 @@
+{"version":3,"file":"commands.js","sourceRoot":"","sources":["../../../src/m365/context/commands.ts"],"names":[],"mappings":"AAAA,MAAM,MAAM,GAAW,SAAS,CAAC;AAEjC,eAAe;IACb,IAAI,EAAE,GAAG,MAAM,OAAO;IACtB,WAAW,EAAE,GAAG,MAAM,cAAc;IACpC,aAAa,EAAE,GAAG,MAAM,gBAAgB;IACxC,UAAU,EAAE,GAAG,MAAM,aAAa;IAClC,MAAM,EAAE,GAAG,MAAM,SAAS;CAC3B,CAAC"}

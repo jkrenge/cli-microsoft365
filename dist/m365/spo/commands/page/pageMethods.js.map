@@ -1,0 +1,1 @@
+{"version":3,"file":"pageMethods.js","sourceRoot":"","sources":["../../../../../src/m365/spo/commands/page/pageMethods.ts"],"names":[],"mappings":"AAAA,MAAM,UAAU,yBAAyB,CAAC,WAAmB;IAC3D,QAAQ,WAAW,EAAE,CAAC;QACpB,KAAK,CAAC;YACJ,OAAO,cAAc,CAAC;QACxB,KAAK,CAAC;YACJ,OAAO,sBAAsB,CAAC;QAChC,KAAK,CAAC;YACJ,OAAO,kBAAkB,CAAC;QAC5B;YACE,OAAO,EAAE,GAAG,WAAW,CAAC;IAC5B,CAAC;AACH,CAAC"}

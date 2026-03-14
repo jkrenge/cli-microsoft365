@@ -1,0 +1,190 @@
+import request from "../request.js";
+import { formatting } from "./formatting.js";
+import { odata } from "./odata.js";
+import { cli } from '../cli/cli.js';
+const graphResource = 'https://graph.microsoft.com';
+export const entraGroup = {
+    /**
+     * Retrieve a single group.
+     * @param id Group ID.
+     * @param properties Properties to include in the response.
+     */
+    async getGroupById(id, properties) {
+        const queryParameters = [];
+        if (properties) {
+            const allProperties = properties.split(',');
+            const selectProperties = allProperties.filter(prop => !prop.includes('/'));
+            if (selectProperties.length > 0) {
+                queryParameters.push(`$select=${selectProperties}`);
+            }
+        }
+        const queryString = queryParameters.length > 0
+            ? `?${queryParameters.join('&')}`
+            : '';
+        const requestOptions = {
+            url: `${graphResource}/v1.0/groups/${id}${queryString}`,
+            headers: {
+                accept: 'application/json;odata.metadata=none'
+            },
+            responseType: 'json'
+        };
+        return request.get(requestOptions);
+    },
+    /**
+     * Get a list of groups by display name.
+     * @param displayName Group display name.
+     * @param properties Properties to include in the response.
+     */
+    async getGroupsByDisplayName(displayName, properties) {
+        const queryParameters = [];
+        if (properties) {
+            const allProperties = properties.split(',');
+            const selectProperties = allProperties.filter(prop => !prop.includes('/'));
+            if (selectProperties.length > 0) {
+                queryParameters.push(`$select=${selectProperties}`);
+            }
+        }
+        const queryString = queryParameters.length > 0
+            ? `&${queryParameters.join('&')}`
+            : '';
+        return odata.getAllItems(`${graphResource}/v1.0/groups?$filter=displayName eq '${formatting.encodeQueryParameter(displayName)}'${queryString}`);
+    },
+    /**
+     * Get a single group by its display name.
+     * @param displayName Group display name.
+     * @param properties Properties to include in the response.
+     * @throws Error when group was not found.
+     * @throws Error when multiple groups with the same name were found.
+     */
+    async getGroupByDisplayName(displayName, properties) {
+        const groups = await this.getGroupsByDisplayName(displayName, properties);
+        if (!groups.length) {
+            throw Error(`The specified group '${displayName}' does not exist.`);
+        }
+        if (groups.length > 1) {
+            const resultAsKeyValuePair = formatting.convertArrayToHashTable('id', groups);
+            return await cli.handleMultipleResultsFound(`Multiple groups with name '${displayName}' found.`, resultAsKeyValuePair);
+        }
+        return groups[0];
+    },
+    /**
+     * Get id of a group by its display name.
+     * @param displayName Group display name.
+     * @throws Error when group was not found.
+     * @throws Error when multiple groups with the same name were found.
+     */
+    async getGroupIdByDisplayName(displayName) {
+        const groups = await odata.getAllItems(`${graphResource}/v1.0/groups?$filter=displayName eq '${formatting.encodeQueryParameter(displayName)}'&$select=id`);
+        if (!groups.length) {
+            throw Error(`The specified group '${displayName}' does not exist.`);
+        }
+        if (groups.length > 1) {
+            const resultAsKeyValuePair = formatting.convertArrayToHashTable('id', groups);
+            const result = await cli.handleMultipleResultsFound(`Multiple groups with name '${displayName}' found.`, resultAsKeyValuePair);
+            return result.id;
+        }
+        return groups[0].id;
+    },
+    /**
+     * Get id of a group by its mail nickname.
+     * @param mailNickname Group mail nickname.
+     * @throws Error when group was not found.
+     * @throws Error when multiple groups with the same name were found.
+     */
+    async getGroupIdByMailNickname(mailNickname) {
+        const groups = await odata.getAllItems(`${graphResource}/v1.0/groups?$filter=mailNickname eq '${formatting.encodeQueryParameter(mailNickname)}'&$select=id`);
+        if (!groups.length) {
+            throw Error(`The specified group '${mailNickname}' does not exist.`);
+        }
+        if (groups.length > 1) {
+            const resultAsKeyValuePair = formatting.convertArrayToHashTable('id', groups);
+            const result = await cli.handleMultipleResultsFound(`Multiple groups with mail nickname '${mailNickname}' found.`, resultAsKeyValuePair);
+            return result.id;
+        }
+        return groups[0].id;
+    },
+    async setGroup(id, isPrivate, displayName, description, logger, verbose) {
+        if (verbose && logger) {
+            await logger.logToStderr(`Updating Microsoft 365 Group ${id}...`);
+        }
+        const update = {};
+        if (displayName) {
+            update.displayName = displayName;
+        }
+        if (description) {
+            update.description = description;
+        }
+        if (typeof isPrivate !== 'undefined') {
+            update.visibility = isPrivate ? 'Private' : 'Public';
+        }
+        const requestOptions = {
+            url: `${graphResource}/v1.0/groups/${id}`,
+            headers: {
+                'accept': 'application/json;odata.metadata=none'
+            },
+            responseType: 'json',
+            data: update
+        };
+        await request.patch(requestOptions);
+    },
+    /**
+     * Checks if group is a m365 group.
+     * @param groupId Group id.
+     * @returns whether the group is a m365 group or not
+     */
+    async isUnifiedGroup(groupId) {
+        const requestOptions = {
+            url: `${graphResource}/v1.0/groups/${groupId}?$select=groupTypes`,
+            headers: {
+                accept: 'application/json;odata.metadata=none'
+            },
+            responseType: 'json'
+        };
+        const group = await request.get(requestOptions);
+        return group.groupTypes.some(type => type === 'Unified');
+    },
+    /**
+     * Retrieve the IDs of groups by their display names. There is no guarantee that the order of the returned IDs will match the order of the specified names.
+     * @param names Array of group names.
+     * @returns Array of group IDs.
+     */
+    async getGroupIdsByDisplayNames(names) {
+        const groupIds = [];
+        for (let i = 0; i < names.length; i += 20) {
+            const namesChunk = names.slice(i, i + 20);
+            const requestOptions = {
+                url: `${graphResource}/v1.0/$batch`,
+                headers: {
+                    accept: 'application/json;odata.metadata=none'
+                },
+                responseType: 'json',
+                data: {
+                    requests: namesChunk.map((name, index) => ({
+                        id: index + 1,
+                        method: 'GET',
+                        url: `/groups?$filter=displayName eq '${formatting.encodeQueryParameter(name)}'&$select=id`,
+                        headers: {
+                            accept: 'application/json;odata.metadata=none'
+                        }
+                    }))
+                }
+            };
+            const res = await request.post(requestOptions);
+            for (const response of res.responses) {
+                if (response.body.value.length === 1) {
+                    groupIds.push(response.body.value[0].id);
+                }
+                else if (response.body.value.length > 1) {
+                    const resultAsKeyValuePair = formatting.convertArrayToHashTable('id', response.body.value);
+                    const result = await cli.handleMultipleResultsFound(`Multiple groups with the name '${namesChunk[response.id - 1]}' found.`, resultAsKeyValuePair);
+                    groupIds.push(result.id);
+                }
+                else {
+                    throw Error(`The specified group with name '${namesChunk[response.id - 1]}' does not exist.`);
+                }
+            }
+        }
+        return groupIds;
+    }
+};
+//# sourceMappingURL=entraGroup.js.map

@@ -1,0 +1,67 @@
+import { valid } from 'semver';
+import { JsonRule } from '../../JsonRule.js';
+import * as spfxDeps from '../spfx-deps.js';
+export class FN021002_PKG_spfx_deps_use_exact_version extends JsonRule {
+    get id() {
+        return 'FN021002';
+    }
+    get title() {
+        return '';
+    }
+    get description() {
+        return '';
+    }
+    get severity() {
+        return 'Required';
+    }
+    get file() {
+        return './package.json';
+    }
+    get resolutionType() {
+        return 'cmd';
+    }
+    visit(project, findings) {
+        if (!project.version || !project.packageJson) {
+            return;
+        }
+        const allSpfxDeps = spfxDeps.deps.concat(spfxDeps.devDeps);
+        if (project.packageJson.dependencies) {
+            const projectDeps = Object.keys(project.packageJson.dependencies);
+            this.validateDependencies({
+                dependencies: projectDeps,
+                isDevDep: false,
+                allSpfxDeps,
+                project,
+                findings
+            });
+        }
+        if (project.packageJson.devDependencies) {
+            const projectDevDeps = Object.keys(project.packageJson.devDependencies);
+            this.validateDependencies({
+                dependencies: projectDevDeps,
+                isDevDep: true,
+                allSpfxDeps,
+                project,
+                findings
+            });
+        }
+    }
+    validateDependencies({ dependencies, isDevDep, allSpfxDeps, project, findings }) {
+        dependencies.forEach(dep => {
+            const depVersion = isDevDep ?
+                project.packageJson.devDependencies[dep] :
+                project.packageJson.dependencies[dep];
+            if (!allSpfxDeps.includes(dep) ||
+                valid(depVersion)) {
+                return;
+            }
+            const node = this.getAstNodeFromFile(project.packageJson, `${isDevDep ? 'devDependencies' : 'dependencies'}.${dep}`);
+            this.addFindingWithCustomInfo(`${dep} is not using exact version`, `${dep} is referenced using a range ${depVersion}. Install the exact version matching the project ${dep}@${project.version}`, [{
+                    file: this.file,
+                    resolution: `${isDevDep ? 'installDev' : 'install'} ${dep}@${project.version}`,
+                    position: this.getPositionFromNode(node)
+                }], findings);
+        });
+    }
+}
+//# sourceMappingURL=FN021002_PKG_spfx_deps_use_exact_version.js.map

@@ -1,0 +1,1 @@
+{"version":3,"file":"upgrade-1.0.1.js","sourceRoot":"","sources":["../../../../../../src/m365/spfx/commands/project/project-upgrade/upgrade-1.0.1.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,sCAAsC,EAAE,MAAM,mDAAmD,CAAC;AAC3G,OAAO,EAAE,qBAAqB,EAAE,MAAM,kCAAkC,CAAC;AAEzE,eAAe;IACb,IAAI,sCAAsC,CAAC,OAAO,CAAC;IACnD,IAAI,qBAAqB,CAAC,OAAO,CAAC;CACnC,CAAC"}

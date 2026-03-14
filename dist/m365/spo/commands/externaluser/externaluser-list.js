@@ -1,0 +1,136 @@
+var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (receiver, state, kind, f) {
+    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a getter");
+    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
+    return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
+};
+var _SpoExternalUserListCommand_instances, _SpoExternalUserListCommand_initTelemetry, _SpoExternalUserListCommand_initOptions, _SpoExternalUserListCommand_initValidators;
+import config from '../../../../config.js';
+import request from '../../../../request.js';
+import { formatting } from '../../../../utils/formatting.js';
+import { spo } from '../../../../utils/spo.js';
+import { validation } from '../../../../utils/validation.js';
+import SpoCommand from '../../../base/SpoCommand.js';
+import commands from '../../commands.js';
+class SpoExternalUserListCommand extends SpoCommand {
+    get name() {
+        return commands.EXTERNALUSER_LIST;
+    }
+    get description() {
+        return 'Lists external users in the tenant';
+    }
+    constructor() {
+        super();
+        _SpoExternalUserListCommand_instances.add(this);
+        __classPrivateFieldGet(this, _SpoExternalUserListCommand_instances, "m", _SpoExternalUserListCommand_initTelemetry).call(this);
+        __classPrivateFieldGet(this, _SpoExternalUserListCommand_instances, "m", _SpoExternalUserListCommand_initOptions).call(this);
+        __classPrivateFieldGet(this, _SpoExternalUserListCommand_instances, "m", _SpoExternalUserListCommand_initValidators).call(this);
+    }
+    async commandAction(logger, args) {
+        try {
+            const spoAdminUrl = await spo.getSpoAdminUrl(logger, this.debug);
+            const reqDigest = await spo.getRequestDigest(spoAdminUrl);
+            if (this.verbose) {
+                await logger.logToStderr(`Retrieving information about external users...`);
+            }
+            const position = parseInt(args.options.position || '0');
+            const pageSize = parseInt(args.options.pageSize || '10');
+            const sortOrder = args.options.sortOrder === 'desc' ? 1 : 0;
+            let payload = '';
+            if (args.options.siteUrl) {
+                payload = `<Request AddExpandoFieldTypeSuffix="true" SchemaVersion="15.0.0.0" LibraryVersion="16.0.0.0" ApplicationName="${config.applicationName}" xmlns="http://schemas.microsoft.com/sharepoint/clientquery/2009"><Actions><ObjectPath Id="135" ObjectPathId="134" /><Query Id="136" ObjectPathId="134"><Query SelectAllProperties="false"><Properties><Property Name="TotalUserCount" ScalarProperty="true" /><Property Name="UserCollectionPosition" ScalarProperty="true" /><Property Name="ExternalUserCollection"><Query SelectAllProperties="false"><Properties /></Query><ChildItemQuery SelectAllProperties="false"><Properties><Property Name="DisplayName" ScalarProperty="true" /><Property Name="InvitedAs" ScalarProperty="true" /><Property Name="UniqueId" ScalarProperty="true" /><Property Name="AcceptedAs" ScalarProperty="true" /><Property Name="WhenCreated" ScalarProperty="true" /><Property Name="InvitedBy" ScalarProperty="true" /></Properties></ChildItemQuery></Property></Properties></Query></Query></Actions><ObjectPaths><Method Id="134" ParentId="131" Name="GetExternalUsersForSite"><Parameters><Parameter Type="String">${formatting.escapeXml(args.options.siteUrl)}</Parameter><Parameter Type="Int32">${position}</Parameter><Parameter Type="Int32">${pageSize}</Parameter><Parameter Type="String">${formatting.escapeXml(args.options.filter || '')}</Parameter><Parameter Type="Enum">${sortOrder}</Parameter></Parameters></Method><Constructor Id="131" TypeId="{e45fd516-a408-4ca4-b6dc-268e2f1f0f83}" /></ObjectPaths></Request>`;
+            }
+            else {
+                payload = `<Request AddExpandoFieldTypeSuffix="true" SchemaVersion="15.0.0.0" LibraryVersion="16.0.0.0" ApplicationName="${config.applicationName}" xmlns="http://schemas.microsoft.com/sharepoint/clientquery/2009"><Actions><ObjectPath Id="109" ObjectPathId="108" /><Query Id="110" ObjectPathId="108"><Query SelectAllProperties="false"><Properties><Property Name="TotalUserCount" ScalarProperty="true" /><Property Name="UserCollectionPosition" ScalarProperty="true" /><Property Name="ExternalUserCollection"><Query SelectAllProperties="false"><Properties /></Query><ChildItemQuery SelectAllProperties="false"><Properties><Property Name="DisplayName" ScalarProperty="true" /><Property Name="InvitedAs" ScalarProperty="true" /><Property Name="UniqueId" ScalarProperty="true" /><Property Name="AcceptedAs" ScalarProperty="true" /><Property Name="WhenCreated" ScalarProperty="true" /><Property Name="InvitedBy" ScalarProperty="true" /></Properties></ChildItemQuery></Property></Properties></Query></Query></Actions><ObjectPaths><Method Id="108" ParentId="105" Name="GetExternalUsers"><Parameters><Parameter Type="Int32">${position}</Parameter><Parameter Type="Int32">${pageSize}</Parameter><Parameter Type="String">${formatting.escapeXml(args.options.filter || '')}</Parameter><Parameter Type="Enum">${sortOrder}</Parameter></Parameters></Method><Constructor Id="105" TypeId="{e45fd516-a408-4ca4-b6dc-268e2f1f0f83}" /></ObjectPaths></Request>`;
+            }
+            const requestOptions = {
+                url: `${spoAdminUrl}/_vti_bin/client.svc/ProcessQuery`,
+                headers: {
+                    'X-RequestDigest': reqDigest.FormDigestValue
+                },
+                data: payload
+            };
+            const res = await request.post(requestOptions);
+            const json = JSON.parse(res);
+            const response = json[0];
+            if (response.ErrorInfo) {
+                throw response.ErrorInfo.ErrorMessage;
+            }
+            else {
+                const results = json.pop();
+                if (results.TotalUserCount > 0) {
+                    await logger.log(results.ExternalUserCollection._Child_Items_.map(e => {
+                        delete e._ObjectType_;
+                        const dateChunks = e.WhenCreated
+                            .replace('/Date(', '')
+                            .replace(')/', '')
+                            .split(',')
+                            .map(c => {
+                            return parseInt(c);
+                        });
+                        e.WhenCreated = new Date(dateChunks[0], dateChunks[1], dateChunks[2], dateChunks[3], dateChunks[4], dateChunks[5], dateChunks[6]);
+                        return e;
+                    }));
+                }
+            }
+        }
+        catch (err) {
+            this.handleRejectedPromise(err);
+        }
+    }
+}
+_SpoExternalUserListCommand_instances = new WeakSet(), _SpoExternalUserListCommand_initTelemetry = function _SpoExternalUserListCommand_initTelemetry() {
+    this.telemetry.push((args) => {
+        Object.assign(this.telemetryProperties, {
+            filter: (!(!args.options.filter)).toString(),
+            pageSize: (!(!args.options.pageSize)).toString(),
+            position: (!(!args.options.position)).toString(),
+            sortOrder: (!(!args.options.sortOrder)).toString(),
+            siteUrl: (!(!args.options.siteUrl)).toString()
+        });
+    });
+}, _SpoExternalUserListCommand_initOptions = function _SpoExternalUserListCommand_initOptions() {
+    this.options.unshift({
+        option: '--filter [filter]'
+    }, {
+        option: '-p, --pageSize [pageSize]'
+    }, {
+        option: '-i, --position [position]'
+    }, {
+        option: '-s, --sortOrder [sortOrder]',
+        autocomplete: ['asc', 'desc']
+    }, {
+        option: '-u, --siteUrl [siteUrl]'
+    });
+}, _SpoExternalUserListCommand_initValidators = function _SpoExternalUserListCommand_initValidators() {
+    this.validators.push(async (args) => {
+        if (args.options.pageSize) {
+            const pageSize = parseInt(args.options.pageSize);
+            if (isNaN(pageSize)) {
+                return `${args.options.pageSize} is not a valid number`;
+            }
+            if (pageSize < 1 || pageSize > 50) {
+                return 'pageSize must be between 1 and 50';
+            }
+        }
+        if (args.options.position) {
+            const position = parseInt(args.options.position);
+            if (isNaN(position)) {
+                return `${args.options.position} is not a valid number`;
+            }
+            if (position < 0) {
+                return 'position must be greater than or 0';
+            }
+        }
+        if (args.options.sortOrder &&
+            args.options.sortOrder !== 'asc' &&
+            args.options.sortOrder !== 'desc') {
+            return `${args.options.sortOrder} is not a valid sortOrder value. Allowed values asc|desc`;
+        }
+        if (args.options.siteUrl) {
+            return validation.isValidSharePointUrl(args.options.siteUrl);
+        }
+        return true;
+    });
+};
+export default new SpoExternalUserListCommand();
+//# sourceMappingURL=externaluser-list.js.map

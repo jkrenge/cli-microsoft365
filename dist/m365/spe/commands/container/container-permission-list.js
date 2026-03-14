@@ -1,0 +1,50 @@
+import { cli } from '../../../../cli/cli.js';
+import { z } from 'zod';
+import { globalOptionsZod } from '../../../../Command.js';
+import commands from '../../commands.js';
+import GraphCommand from '../../../base/GraphCommand.js';
+import { odata } from '../../../../utils/odata.js';
+import { formatting } from '../../../../utils/formatting.js';
+export const options = z.strictObject({
+    ...globalOptionsZod.shape,
+    containerId: z.string().alias('i')
+});
+class SpeContainerPermissionListCommand extends GraphCommand {
+    get name() {
+        return commands.CONTAINER_PERMISSION_LIST;
+    }
+    get description() {
+        return 'Lists permissions of a SharePoint Embedded Container';
+    }
+    defaultProperties() {
+        return ['id', 'userPrincipalName', 'roles'];
+    }
+    get schema() {
+        return options;
+    }
+    async commandAction(logger, args) {
+        try {
+            if (this.verbose) {
+                await logger.logToStderr(`Retrieving permissions of a SharePoint Embedded Container with id '${args.options.containerId}'...`);
+            }
+            const containerPermission = await odata.getAllItems(`${this.resource}/v1.0/storage/fileStorage/containers/${formatting.encodeQueryParameter(args.options.containerId)}/permissions`);
+            if (!cli.shouldTrimOutput(args.options.output)) {
+                await logger.log(containerPermission);
+            }
+            else {
+                await logger.log(containerPermission.map(i => {
+                    return {
+                        id: i.id,
+                        roles: i.roles.join(','),
+                        userPrincipalName: i.grantedToV2.user.userPrincipalName
+                    };
+                }));
+            }
+        }
+        catch (err) {
+            this.handleRejectedODataJsonPromise(err);
+        }
+    }
+}
+export default new SpeContainerPermissionListCommand();
+//# sourceMappingURL=container-permission-list.js.map

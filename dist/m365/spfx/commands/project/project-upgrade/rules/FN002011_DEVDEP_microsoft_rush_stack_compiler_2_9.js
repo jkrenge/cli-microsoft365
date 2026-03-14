@@ -1,0 +1,13 @@
+import { DependencyRule } from "./DependencyRule.js";
+export class FN002011_DEVDEP_microsoft_rush_stack_compiler_2_9 extends DependencyRule {
+    constructor(packageVersion, isOptional = true) {
+        super('@microsoft/rush-stack-compiler-2.9', packageVersion, true, isOptional);
+    }
+    get id() {
+        return 'FN002011';
+    }
+    get supersedes() {
+        return ['FN002010'];
+    }
+}
+//# sourceMappingURL=FN002011_DEVDEP_microsoft_rush_stack_compiler_2_9.js.map

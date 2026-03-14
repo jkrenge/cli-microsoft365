@@ -1,0 +1,107 @@
+import chalk from 'chalk';
+import fs from 'fs';
+import { EOL } from 'os';
+import path from 'path';
+function convertTitle(md) {
+    return md.replace(/^#\s+(.*)/gm, (match, title) => {
+        return chalk.bold(title.toLocaleUpperCase()) + EOL + Array(title.length + 1).join('=');
+    });
+}
+function convertHeadings(md) {
+    return md.replace(/^(#+)\s+(.*)/gm, (match, level, content) => {
+        return `${EOL}${chalk.bold(content.toLocaleUpperCase())}`;
+    });
+}
+function convertAdmonitions(md) {
+    const regex = new RegExp(/^([ \t]*):::(\w+)(?:\[([^\]]+)\])?([\s\S]*?)^\1:::$/, 'gm');
+    return md.replace(regex, (_, indent, label, title, content) => indent + label.toLocaleUpperCase() + (title ? EOL + EOL + indent + title : '') + EOL + EOL + indent + content.trim());
+}
+function includeContent(md, rootFolder) {
+    const mdxImports = [
+        { tag: "<Global />", location: "docs/cmd/_global.mdx" },
+        { tag: "<CLISettings />", location: "docs/_clisettings.mdx" }
+    ];
+    mdxImports.forEach(mdxImport => {
+        md = md.replace(mdxImport.tag, () => fs.readFileSync(path.join(rootFolder, mdxImport.location), 'utf8')).replace(/(```\r?\n)\r?\n(```md definition-list\r?\n)/g, "$1$2");
+    });
+    return md;
+}
+function convertDd(md) {
+    return md.replace(/^:\s(.*)/gm, (match, content) => {
+        return `  ${content}`;
+    });
+}
+function convertHyperlinks(md) {
+    return md.replace(/(?!\[1m)(?!\[22m)\[([^\]]+)\]\(([^)]+)\)/gm, (match, label, url) => {
+        // if the link is the same as the content, return just the link
+        if (label === url) {
+            return url;
+        }
+        // if the link is relative, remove it because there's no way to open it
+        // from the terminal anyway. In the future, we could convert it to the
+        // actual link of the docs.
+        if (!url.startsWith('http:') && !url.startsWith('https:')) {
+            return label;
+        }
+        return `${label} (${url})`;
+    });
+}
+function convertContentTabs(md) {
+    return md
+        .replace(/<TabItem value="([^"]+)">/gm, '$1')
+        .replace(/.*\n?<\/?(Tabs|TabItem)>.*\n?/g, '')
+        .replace(/```(?:\w+)?\s*([\s\S]*?)\s*```/g, '$1')
+        .trim();
+}
+function convertCodeFences(md) {
+    const regex = /^```.*?(?:\r?\n)(.*?)```(?:\r?\n)/gms;
+    return md.replace(regex, (match, code) => {
+        return `${code.replace(/^(.+)$/gm, '  $1')}${EOL}`;
+    });
+}
+function removeInlineMarkup(md) {
+    // from https://stackoverflow.com/a/70064453
+    return md.replace(/(?<marks>[`]|\*{1,3}|_{1,3}|~{2})(?<inmarks>.*?)\1/g, '$<inmarks>$<link_text>');
+}
+function removeTooManyEmptyLines(md) {
+    const regex = new RegExp('(' + EOL + '){4,}', 'g');
+    return md.replace(regex, Array(4).join(EOL));
+}
+function removeFrontmatter(md) {
+    return md.replace(/^---[\s\S]*?---/gm, '').trim();
+}
+function removeImports(md) {
+    return md.replace(/^import .+;$/gms, '').trim();
+}
+function escapeMd(mdString) {
+    if (!mdString) {
+        return mdString;
+    }
+    return mdString.toString()
+        .replace(/([_*~`|])/g, '\\$1')
+        .replace(/\n/g, '<br>');
+}
+const convertFunctions = [
+    convertTitle,
+    convertHeadings,
+    convertAdmonitions,
+    convertDd,
+    convertHyperlinks,
+    convertCodeFences,
+    convertContentTabs,
+    removeInlineMarkup,
+    removeTooManyEmptyLines,
+    removeFrontmatter,
+    removeImports
+];
+export const md = {
+    md2plain(md, rootFolderDocs) {
+        md = includeContent(md, rootFolderDocs);
+        convertFunctions.forEach(convert => {
+            md = convert(md);
+        });
+        return md;
+    },
+    escapeMd
+};
+//# sourceMappingURL=md.js.map

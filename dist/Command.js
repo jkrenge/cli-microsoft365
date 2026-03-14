@@ -1,0 +1,591 @@
+var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (receiver, state, kind, f) {
+    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a getter");
+    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
+    return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
+};
+var _Command_instances, _Command_initTelemetry, _Command_initOptions, _Command_initValidators;
+import os from 'os';
+import { z } from 'zod';
+import auth from './Auth.js';
+import { cli } from './cli/cli.js';
+import request from './request.js';
+import { settingsNames } from './settingsNames.js';
+import { telemetry } from './telemetry.js';
+import { accessToken } from './utils/accessToken.js';
+import { md } from './utils/md.js';
+import { optionsUtils } from './utils/optionsUtils.js';
+import { prompt } from './utils/prompt.js';
+import { zod } from './utils/zod.js';
+export class CommandError {
+    constructor(message, code) {
+        this.message = message;
+        this.code = code;
+    }
+}
+export class CommandErrorWithOutput {
+    constructor(error, stderr) {
+        this.error = error;
+        this.stderr = stderr;
+    }
+}
+export const globalOptionsZod = z.object({
+    query: z.string().optional(),
+    output: z.enum(['csv', 'json', 'md', 'text', 'none']).optional().alias('o'),
+    debug: z.boolean().default(false),
+    verbose: z.boolean().default(false)
+});
+class Command {
+    get allowedOutputs() {
+        return ['csv', 'json', 'md', 'text', 'none'];
+    }
+    get schema() {
+        return undefined;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    getRefinedSchema(schema) {
+        return undefined;
+    }
+    getSchemaToParse() {
+        return this.getRefinedSchema(this.schema) ?? this.schema;
+    }
+    constructor() {
+        // These functions must be defined with # so that they're truly private
+        // otherwise you'll get a ts2415 error (Types have separate declarations of
+        // a private property 'x'.).
+        // `private` in TS is a design-time flag and private members end-up being
+        // regular class properties that would collide on runtime, which is why we
+        // need the extra `#`
+        _Command_instances.add(this);
+        this.debug = false;
+        this.verbose = false;
+        this.telemetry = [];
+        this.telemetryProperties = {};
+        this.options = [];
+        this.optionSets = [];
+        this.types = {
+            boolean: [],
+            string: []
+        };
+        this.validators = [];
+        // metadata for command's options
+        // used for building telemetry
+        this.optionsInfo = [];
+        __classPrivateFieldGet(this, _Command_instances, "m", _Command_initTelemetry).call(this);
+        __classPrivateFieldGet(this, _Command_instances, "m", _Command_initOptions).call(this);
+        __classPrivateFieldGet(this, _Command_instances, "m", _Command_initValidators).call(this);
+    }
+    async validateUnknownOptions(args, command) {
+        if (this.allowUnknownOptions()) {
+            return true;
+        }
+        // if the command doesn't allow unknown options, check if all specified
+        // options match command options
+        for (const optionFromArgs in args.options) {
+            let matches = false;
+            for (let i = 0; i < command.options.length; i++) {
+                const option = command.options[i];
+                if (optionFromArgs === option.long ||
+                    optionFromArgs === option.short) {
+                    matches = true;
+                    break;
+                }
+            }
+            if (!matches) {
+                return `Invalid option: '${optionFromArgs}'${os.EOL}`;
+            }
+        }
+        return true;
+    }
+    async validateRequiredOptions(args, command) {
+        const shouldPrompt = cli.getSettingWithDefaultValue(settingsNames.prompt, true);
+        let prompted = false;
+        for (let i = 0; i < command.options.length; i++) {
+            const optionInfo = command.options[i];
+            if (!optionInfo.required ||
+                typeof args.options[optionInfo.name] !== 'undefined') {
+                continue;
+            }
+            if (!shouldPrompt) {
+                return `Required option ${optionInfo.name} not specified`;
+            }
+            if (!prompted) {
+                prompted = true;
+                await cli.error('🌶️  Provide values for the following parameters:');
+            }
+            const answer = await cli.promptForValue(optionInfo);
+            args.options[optionInfo.name] = answer;
+        }
+        if (prompted) {
+            await cli.error('');
+        }
+        await this.processOptions(args.options);
+        return true;
+    }
+    async validateOptionSets(args, command) {
+        const optionsSets = command.command.optionSets;
+        if (!optionsSets || optionsSets.length === 0) {
+            return true;
+        }
+        const shouldPrompt = cli.getSettingWithDefaultValue(settingsNames.prompt, true);
+        const argsOptions = Object.keys(args.options);
+        for (const optionSet of optionsSets.sort(opt => opt.runsWhen ? 0 : 1)) {
+            if (optionSet.runsWhen && !optionSet.runsWhen(args)) {
+                continue;
+            }
+            const commonOptions = argsOptions.filter(opt => optionSet.options.includes(opt));
+            if (commonOptions.length === 0) {
+                if (!shouldPrompt) {
+                    return `Specify one of the following options: ${optionSet.options.join(', ')}.`;
+                }
+                await this.promptForOptionSetNameAndValue(args, optionSet);
+            }
+            if (commonOptions.length > 1) {
+                if (!shouldPrompt) {
+                    return `Specify one of the following options: ${optionSet.options.join(', ')}, but not multiple.`;
+                }
+                await this.promptForSpecificOption(args, commonOptions);
+            }
+        }
+        return true;
+    }
+    async promptForOptionSetNameAndValue(args, optionSet) {
+        await cli.error(`🌶️  Please specify one of the following options:`);
+        const selectedOptionName = await prompt.forSelection({ message: `Option to use:`, choices: optionSet.options.map((choice) => { return { name: choice, value: choice }; }) });
+        const optionValue = await prompt.forInput({ message: `${selectedOptionName}:` });
+        args.options[selectedOptionName] = optionValue;
+        await cli.error('');
+    }
+    async promptForSpecificOption(args, commonOptions) {
+        await cli.error(`🌶️  Multiple options for an option set specified. Please specify the correct option that you wish to use.`);
+        const selectedOptionName = await prompt.forSelection({ message: `Option to use:`, choices: commonOptions.map((choice) => { return { name: choice, value: choice }; }) });
+        commonOptions.filter(y => y !== selectedOptionName).map(optionName => args.options[optionName] = undefined);
+        await cli.error('');
+    }
+    async validateOutput(args) {
+        if (args.options.output &&
+            this.allowedOutputs.indexOf(args.options.output) < 0) {
+            return `'${args.options.output}' is not a valid output type. Allowed output types are ${this.allowedOutputs.join(', ')}`;
+        }
+        else {
+            return true;
+        }
+    }
+    alias() {
+        return;
+    }
+    /**
+     * Returns list of properties that should be returned in the text output.
+     * Returns all properties if no default properties specified
+     */
+    defaultProperties() {
+        return;
+    }
+    allowUnknownOptions() {
+        return;
+    }
+    /**
+     * Processes options after resolving them from the user input and before
+     * passing them on to command action for execution. Used for example for
+     * expanding server-relative URLs to absolute in spo commands
+     * @param options Object that contains command's options
+     */
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-empty-function
+    async processOptions(options) {
+    }
+    async action(logger, args) {
+        try {
+            await auth.restoreAuth();
+        }
+        catch (error) {
+            throw new CommandError(error);
+        }
+        await this.initAction(args, logger);
+        if (!auth.connection.active) {
+            throw new CommandError('Log in to Microsoft 365 first');
+        }
+        try {
+            this.loadValuesFromAccessToken(args);
+            await this.commandAction(logger, args);
+        }
+        catch (ex) {
+            if (ex instanceof CommandError) {
+                throw ex;
+            }
+            throw new CommandError(ex);
+        }
+    }
+    async validate(args, command) {
+        for (const validate of this.validators) {
+            const result = await validate(args, command);
+            if (result !== true) {
+                return result;
+            }
+        }
+        return true;
+    }
+    getCommandName(alias) {
+        if (alias &&
+            this.alias()?.includes(alias)) {
+            return alias;
+        }
+        let commandName = this.name;
+        let pos = commandName.indexOf('<');
+        const pos1 = commandName.indexOf('[');
+        if (pos > -1 || pos1 > -1) {
+            if (pos1 > -1) {
+                pos = pos1;
+            }
+            commandName = commandName.substring(0, pos).trim();
+        }
+        return commandName;
+    }
+    handleRejectedODataPromise(res) {
+        /* c8 ignore next 4 */
+        if (this.debug && typeof global.it === 'undefined') {
+            const error = new Error();
+            cli.error(error.stack).catch(() => undefined);
+        }
+        if (res.error) {
+            try {
+                const err = JSON.parse(res.error);
+                throw new CommandError(err['odata.error'].message.value);
+            }
+            catch (err) {
+                if (err instanceof CommandError) {
+                    throw err;
+                }
+                try {
+                    const graphResponseError = res.error;
+                    if (graphResponseError.error.code) {
+                        throw new CommandError(graphResponseError.error.code + " - " + graphResponseError.error.message);
+                    }
+                    else {
+                        throw new CommandError(graphResponseError.error.message);
+                    }
+                }
+                catch (err) {
+                    if (err instanceof CommandError) {
+                        throw err;
+                    }
+                    throw new CommandError(res.error);
+                }
+            }
+        }
+        else {
+            if (res instanceof Error) {
+                throw new CommandError(res.message);
+            }
+            else {
+                throw new CommandError(res);
+            }
+        }
+    }
+    handleRejectedODataJsonPromise(response) {
+        /* c8 ignore next 4 */
+        if (this.debug && typeof global.it === 'undefined') {
+            const error = new Error();
+            cli.error(error.stack).catch(() => undefined);
+        }
+        if (response.error &&
+            response.error['odata.error'] &&
+            response.error['odata.error'].message) {
+            throw new CommandError(response.error['odata.error'].message.value);
+        }
+        if (!response.error) {
+            if (response instanceof Error) {
+                throw new CommandError(response.message);
+            }
+            else {
+                throw new CommandError(response);
+            }
+        }
+        if (response.error.error &&
+            response.error.error.message) {
+            throw new CommandError(response.error.error.message);
+        }
+        if (response.error.message) {
+            throw new CommandError(response.error.message);
+        }
+        if (response.error.error_description) {
+            throw new CommandError(response.error.error_description);
+        }
+        try {
+            const error = JSON.parse(response.error);
+            if (error &&
+                error.error &&
+                error.error.message) {
+                throw new CommandError(error.error.message);
+            }
+            else {
+                throw new CommandError(response.error);
+            }
+        }
+        catch (err) {
+            if (err instanceof CommandError) {
+                throw err;
+            }
+            throw new CommandError(response.error);
+        }
+    }
+    handleError(rawResponse) {
+        if (rawResponse instanceof Error) {
+            throw new CommandError(rawResponse.message);
+        }
+        else {
+            throw new CommandError(rawResponse);
+        }
+    }
+    handleRejectedPromise(rawResponse) {
+        this.handleError(rawResponse);
+    }
+    async initAction(args, logger) {
+        this.debug = args.options.debug || process.env.CLIMICROSOFT365_DEBUG === '1';
+        this.verbose = this.debug || args.options.verbose || process.env.CLIMICROSOFT365_VERBOSE === '1';
+        request.debug = this.debug;
+        request.logger = logger;
+        if (this.debug && auth.connection.identityName !== undefined) {
+            await logger.logToStderr(`Executing command as '${auth.connection.identityName}', appId: ${auth.connection.appId}, tenantId: ${auth.connection.identityTenantId}`);
+        }
+        await telemetry.trackEvent(this.getUsedCommandName(), this.getTelemetryProperties(args));
+    }
+    trackUnknownOptions(telemetryProps, options) {
+        const unknownOptions = optionsUtils.getUnknownOptions(options, this.options);
+        const unknownOptionsNames = Object.getOwnPropertyNames(unknownOptions);
+        unknownOptionsNames.forEach(o => {
+            telemetryProps[o] = true;
+        });
+    }
+    addUnknownOptionsToPayload(payload, options) {
+        const unknownOptions = optionsUtils.getUnknownOptions(options, this.options);
+        optionsUtils.addUnknownOptionsToPayload(payload, unknownOptions);
+    }
+    addUnknownOptionsToPayloadZod(payload, options) {
+        const unknownOptions = optionsUtils.getUnknownOptions(options, zod.schemaToOptions(this.schema));
+        optionsUtils.addUnknownOptionsToPayload(payload, unknownOptions);
+    }
+    loadValuesFromAccessToken(args) {
+        if (!auth.connection.accessTokens[auth.defaultResource]) {
+            return;
+        }
+        const token = auth.connection.accessTokens[auth.defaultResource].accessToken;
+        const optionNames = Object.getOwnPropertyNames(args.options);
+        optionNames.forEach(option => {
+            const value = args.options[option];
+            if (!value || typeof value !== 'string') {
+                return;
+            }
+            const lowerCaseValue = value.toLowerCase().trim();
+            if (lowerCaseValue === '@meid' || lowerCaseValue === '@meusername') {
+                const isAppOnlyAccessToken = accessToken.isAppOnlyAccessToken(auth.connection.accessTokens[auth.defaultResource].accessToken);
+                if (isAppOnlyAccessToken) {
+                    throw `It's not possible to use ${value} with application permissions`;
+                }
+            }
+            if (lowerCaseValue === '@meid') {
+                args.options[option] = accessToken.getUserIdFromAccessToken(token);
+            }
+            if (lowerCaseValue === '@meusername') {
+                args.options[option] = accessToken.getUserNameFromAccessToken(token);
+            }
+        });
+    }
+    async showDeprecationWarning(logger, deprecated, recommended) {
+        if (cli.currentCommandName &&
+            cli.currentCommandName.indexOf(deprecated) === 0) {
+            const chalk = (await import('chalk')).default;
+            await logger.logToStderr(chalk.yellow(`Command '${deprecated}' is deprecated. Please use '${recommended}' instead.`));
+        }
+    }
+    async warn(logger, warning) {
+        const chalk = (await import('chalk')).default;
+        await logger.logToStderr(chalk.yellow(warning));
+    }
+    getUsedCommandName() {
+        const commandName = this.getCommandName();
+        if (!cli.currentCommandName) {
+            return commandName;
+        }
+        if (cli.currentCommandName &&
+            cli.currentCommandName.indexOf(commandName) === 0) {
+            return commandName;
+        }
+        // since the command was called by something else than its name
+        // it must have aliases
+        const aliases = this.alias();
+        for (let i = 0; i < aliases.length; i++) {
+            if (cli.currentCommandName.indexOf(aliases[i]) === 0) {
+                return aliases[i];
+            }
+        }
+        // shouldn't happen because the command is called either by its name or alias
+        return '';
+    }
+    getTelemetryProperties(args) {
+        if (this.schema) {
+            const telemetryProperties = {};
+            this.optionsInfo.forEach(o => {
+                if (o.required) {
+                    return;
+                }
+                if (typeof args.options[o.name] === 'undefined') {
+                    return;
+                }
+                switch (o.type) {
+                    case 'string':
+                        telemetryProperties[o.name] = o.autocomplete ? args.options[o.name] : typeof args.options[o.name] !== 'undefined';
+                        break;
+                    case 'boolean':
+                        telemetryProperties[o.name] = args.options[o.name];
+                        break;
+                    case 'number':
+                        telemetryProperties[o.name] = typeof args.options[o.name] !== 'undefined';
+                        break;
+                }
+                ;
+            });
+            return telemetryProperties;
+        }
+        else {
+            this.telemetry.forEach(t => t(args));
+            return this.telemetryProperties;
+        }
+    }
+    async getTextOutput(logStatement) {
+        // display object as a list of key-value pairs
+        if (logStatement.length === 1) {
+            const obj = logStatement[0];
+            const propertyNames = [];
+            Object.getOwnPropertyNames(obj).forEach(p => {
+                propertyNames.push(p);
+            });
+            let longestPropertyLength = 0;
+            propertyNames.forEach(p => {
+                if (p.length > longestPropertyLength) {
+                    longestPropertyLength = p.length;
+                }
+            });
+            const output = [];
+            propertyNames.sort().forEach(p => {
+                output.push(`${p.length < longestPropertyLength ? p + new Array(longestPropertyLength - p.length + 1).join(' ') : p}: ${Array.isArray(obj[p]) || typeof obj[p] === 'object' ? JSON.stringify(obj[p]) : obj[p]}`);
+            });
+            return output.join('\n') + '\n';
+        }
+        // display object as a table where each property is a column
+        else {
+            const Table = (await import('easy-table')).default;
+            const t = new Table();
+            logStatement.forEach((r) => {
+                if (typeof r !== 'object') {
+                    return;
+                }
+                Object.getOwnPropertyNames(r).forEach(p => {
+                    t.cell(p, r[p]);
+                });
+                t.newRow();
+            });
+            return t.toString();
+        }
+    }
+    getJsonOutput(logStatement) {
+        return JSON
+            .stringify(logStatement, null, 2)
+            // replace unescaped newlines with escaped newlines #2807
+            .replace(/([^\\])\\n/g, '$1\\\\\\n');
+    }
+    async getCsvOutput(logStatement, options) {
+        const { stringify } = await import('csv-stringify/sync');
+        if (logStatement && logStatement.length > 0 && !options.query) {
+            logStatement.map(l => {
+                for (const x of Object.keys(l)) {
+                    // Remove object-properties from the output
+                    // Excludes null from the check, because null is an object in JavaScript.  
+                    //  Properties with null values are not removed from the output, 
+                    //  as this can cause missing columns
+                    if (typeof l[x] === 'object' && l[x] !== null) {
+                        delete l[x];
+                    }
+                }
+            });
+        }
+        // https://csv.js.org/stringify/options/
+        return stringify(logStatement, {
+            header: cli.getSettingWithDefaultValue(settingsNames.csvHeader, true),
+            escape: cli.getSettingWithDefaultValue(settingsNames.csvEscape, '"'),
+            quote: cli.getConfig().get(settingsNames.csvQuote),
+            quoted: cli.getSettingWithDefaultValue(settingsNames.csvQuoted, false),
+            // eslint-disable-next-line camelcase
+            quoted_empty: cli.getSettingWithDefaultValue(settingsNames.csvQuotedEmpty, false),
+            cast: {
+                boolean: (value) => value ? '1' : '0'
+            }
+        });
+    }
+    getMdOutput(logStatement, command, options) {
+        const output = [
+            `# ${command.getCommandName()} ${Object.keys(options).filter(o => o !== 'output').map(k => `--${k} "${options[k]}"`).join(' ')}`, os.EOL,
+            os.EOL,
+            `Date: ${(new Date().toLocaleDateString())}`, os.EOL,
+            os.EOL
+        ];
+        if (logStatement && logStatement.length > 0) {
+            logStatement.forEach(l => {
+                if (!l) {
+                    return;
+                }
+                const title = this.getLogItemTitle(l);
+                const id = this.getLogItemId(l);
+                if (title && id) {
+                    output.push(`## ${title} (${id})`, os.EOL, os.EOL);
+                }
+                else if (title) {
+                    output.push(`## ${title}`, os.EOL, os.EOL);
+                }
+                else if (id) {
+                    output.push(`## ${id}`, os.EOL, os.EOL);
+                }
+                output.push(`Property | Value`, os.EOL, `---------|-------`, os.EOL);
+                output.push(Object.keys(l).filter(x => {
+                    if (!options.query && typeof l[x] === 'object') {
+                        return;
+                    }
+                    return x;
+                }).map(k => {
+                    const value = l[k];
+                    return `${md.escapeMd(k)} | ${md.escapeMd(value)}`;
+                }).join(os.EOL), os.EOL);
+                output.push(os.EOL);
+            });
+        }
+        return output.join('').trimEnd();
+    }
+    getLogItemTitle(logItem) {
+        return logItem.title ?? logItem.Title ??
+            logItem.displayName ?? logItem.DisplayName ??
+            logItem.name ?? logItem.Name;
+    }
+    getLogItemId(logItem) {
+        return logItem.id ?? logItem.Id?.StringValue ?? logItem.Id ?? logItem.ID ??
+            logItem.uniqueId ?? logItem.UniqueId ??
+            logItem.objectId ?? logItem.ObjectId ??
+            logItem.url ?? logItem.Url ?? logItem.URL;
+    }
+}
+_Command_instances = new WeakSet(), _Command_initTelemetry = function _Command_initTelemetry() {
+    this.telemetry.push((args) => {
+        Object.assign(this.telemetryProperties, {
+            debug: this.debug.toString(),
+            verbose: this.verbose.toString(),
+            output: args.options.output,
+            query: typeof args.options.query !== 'undefined'
+        });
+    });
+}, _Command_initOptions = function _Command_initOptions() {
+    this.options.unshift({ option: '--query [query]' }, {
+        option: '-o, --output [output]',
+        autocomplete: this.allowedOutputs
+    }, { option: '--verbose' }, { option: '--debug' });
+}, _Command_initValidators = function _Command_initValidators() {
+    this.validators.push(args => this.validateOutput(args), (args, command) => this.validateUnknownOptions(args, command), (args, command) => this.validateRequiredOptions(args, command), (args, command) => this.validateOptionSets(args, command));
+};
+export default Command;
+//# sourceMappingURL=Command.js.map

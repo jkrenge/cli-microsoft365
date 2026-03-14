@@ -1,0 +1,32 @@
+const prefix = 'pp';
+export default {
+    AIBUILDERMODEL_GET: `${prefix} aibuildermodel get`,
+    AIBUILDERMODEL_LIST: `${prefix} aibuildermodel list`,
+    AIBUILDERMODEL_REMOVE: `${prefix} aibuildermodel remove`,
+    COPILOT_GET: `${prefix} copilot get`,
+    COPILOT_LIST: `${prefix} copilot list`,
+    COPILOT_REMOVE: `${prefix} copilot remove`,
+    DATAVERSE_TABLE_LIST: `${prefix} dataverse table list`,
+    DATAVERSE_TABLE_GET: `${prefix} dataverse table get`,
+    DATAVERSE_TABLE_REMOVE: `${prefix} dataverse table remove`,
+    DATAVERSE_TABLE_ROW_LIST: `${prefix} dataverse table row list`,
+    DATAVERSE_TABLE_ROW_REMOVE: `${prefix} dataverse table row remove`,
+    ENVIRONMENT_GET: `${prefix} environment get`,
+    ENVIRONMENT_LIST: `${prefix} environment list`,
+    GATEWAY_GET: `${prefix} gateway get`,
+    GATEWAY_LIST: `${prefix} gateway list`,
+    MANAGEMENTAPP_ADD: `${prefix} managementapp add`,
+    MANAGEMENTAPP_LIST: `${prefix} managementapp list`,
+    SOLUTION_GET: `${prefix} solution get`,
+    SOLUTION_LIST: `${prefix} solution list`,
+    SOLUTION_PUBLISH: `${prefix} solution publish`,
+    SOLUTION_REMOVE: `${prefix} solution remove`,
+    SOLUTION_PUBLISHER_ADD: `${prefix} solution publisher add`,
+    SOLUTION_PUBLISHER_GET: `${prefix} solution publisher get`,
+    SOLUTION_PUBLISHER_LIST: `${prefix} solution publisher list`,
+    SOLUTION_PUBLISHER_REMOVE: `${prefix} solution publisher remove`,
+    TENANT_SETTINGS_LIST: `${prefix} tenant settings list`,
+    TENANT_SETTINGS_SET: `${prefix} tenant settings set`,
+    WEBSITE_GET: `${prefix} website get`
+};
+//# sourceMappingURL=commands.js.map

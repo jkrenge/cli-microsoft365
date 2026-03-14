@@ -1,0 +1,135 @@
+import request from "../request.js";
+import { formatting } from "./formatting.js";
+const graphResource = 'https://graph.microsoft.com';
+export const entraUser = {
+    /**
+     * Retrieve the id of a user by its UPN.
+     * @param upn User UPN.
+     */
+    async getUserIdByUpn(upn) {
+        const requestOptions = {
+            url: `${graphResource}/v1.0/users?$filter=userPrincipalName eq '${formatting.encodeQueryParameter(upn)}'&$select=Id`,
+            headers: {
+                accept: 'application/json;odata.metadata=none'
+            },
+            responseType: 'json'
+        };
+        const res = await request.get(requestOptions);
+        if (res.value.length === 0) {
+            throw Error(`The specified user with user name ${upn} does not exist.`);
+        }
+        return res.value[0].id;
+    },
+    /**
+     * Retrieve the IDs of users by their UPNs. There is no guarantee that the order of the returned IDs will match the order of the specified UPNs.
+     * @param upns Array of user UPNs.
+     * @returns Array of user IDs.
+     */
+    async getUserIdsByUpns(upns) {
+        const userIds = [];
+        for (let i = 0; i < upns.length; i += 20) {
+            const upnsChunk = upns.slice(i, i + 20);
+            const requestOptions = {
+                url: `${graphResource}/v1.0/$batch`,
+                headers: {
+                    accept: 'application/json;odata.metadata=none'
+                },
+                responseType: 'json',
+                data: {
+                    requests: upnsChunk.map((upn, index) => ({
+                        id: index + 1,
+                        method: 'GET',
+                        url: `/users/${formatting.encodeQueryParameter(upn)}?$select=id`,
+                        headers: {
+                            accept: 'application/json;odata.metadata=none'
+                        }
+                    }))
+                }
+            };
+            const res = await request.post(requestOptions);
+            for (const response of res.responses) {
+                if (response.status !== 200) {
+                    throw Error(`The specified user with user name '${upnsChunk[response.id - 1]}' does not exist.`);
+                }
+                userIds.push(response.body.id);
+            }
+        }
+        return userIds;
+    },
+    /**
+    * Retrieve the ID of a user by its email.
+    * @param mail User email.
+    */
+    async getUserIdByEmail(email) {
+        const requestOptions = {
+            url: `${graphResource}/v1.0/users?$filter=mail eq '${formatting.encodeQueryParameter(email)}'&$select=id`,
+            headers: {
+                accept: 'application/json;odata.metadata=none'
+            },
+            responseType: 'json'
+        };
+        const res = await request.get(requestOptions);
+        if (res.value.length === 0) {
+            throw Error(`The specified user with email ${email} does not exist`);
+        }
+        return res.value[0].id;
+    },
+    /**
+     * Retrieve the IDs of users by their mail. There is no guarantee that the order of the returned IDs will match the order of the specified mails.
+     * @param emails Array of user mails.
+     * @returns Array of user IDs.
+     */
+    async getUserIdsByEmails(emails) {
+        const userIds = [];
+        for (let i = 0; i < emails.length; i += 20) {
+            const emailsChunk = emails.slice(i, i + 20);
+            const requestOptions = {
+                url: `${graphResource}/v1.0/$batch`,
+                headers: {
+                    accept: 'application/json;odata.metadata=none'
+                },
+                responseType: 'json',
+                data: {
+                    requests: emailsChunk.map((email, index) => ({
+                        id: index + 1,
+                        method: 'GET',
+                        url: `/users?$filter=mail eq '${formatting.encodeQueryParameter(email)}'&$select=id`,
+                        headers: {
+                            accept: 'application/json;odata.metadata=none'
+                        }
+                    }))
+                }
+            };
+            const res = await request.post(requestOptions);
+            for (const response of res.responses) {
+                if (response.status !== 200) {
+                    throw Error(`The specified user with mail '${emailsChunk[response.id - 1]}' does not exist.`);
+                }
+                userIds.push(response.body.id);
+            }
+        }
+        return userIds;
+    },
+    /**
+     * Retrieve the UPN of a user by its ID.
+     * Returns the UPN as string
+     * @param id User ID.
+     * @param logger The logger object
+     * @param verbose Set for verbose logging
+     */
+    async getUpnByUserId(id, logger, verbose) {
+        if (verbose && logger) {
+            await logger.logToStderr(`Retrieving the upn for user ${id}`);
+        }
+        const requestOptions = {
+            url: `${graphResource}/v1.0/users/${id}?$select=userPrincipalName`,
+            headers: {
+                accept: 'application/json;odata.metadata=none'
+            },
+            responseType: 'json'
+        };
+        const res = await request.get(requestOptions);
+        return res.userPrincipalName;
+    }
+};
+//# sourceMappingURL=entraUser.js.map

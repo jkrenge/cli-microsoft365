@@ -1,0 +1,108 @@
+import { z } from 'zod';
+import { globalOptionsZod } from '../../../../Command.js';
+import GraphCommand from '../../../base/GraphCommand.js';
+import commands from '../../commands.js';
+import { validation } from '../../../../utils/validation.js';
+import { vivaEngage } from '../../../../utils/vivaEngage.js';
+import request from '../../../../request.js';
+import { entraUser } from '../../../../utils/entraUser.js';
+import { formatting } from '../../../../utils/formatting.js';
+export const options = z.strictObject({
+    ...globalOptionsZod.shape,
+    communityId: z.string().optional(),
+    communityDisplayName: z.string().optional().alias('n'),
+    entraGroupId: z.uuid().optional(),
+    ids: z.string()
+        .refine(ids => validation.isValidGuidArray(ids) === true, {
+        error: e => `The following GUIDs are invalid: ${e.input}.`
+    }).optional(),
+    userNames: z.string()
+        .refine(userNames => validation.isValidUserPrincipalNameArray(userNames) === true, {
+        error: e => `The following user principal names are invalid: ${e.input}.`
+    }).optional(),
+    role: z.enum(['Admin', 'Member']).alias('r')
+});
+class VivaEngageCommunityUserAddCommand extends GraphCommand {
+    get name() {
+        return commands.ENGAGE_COMMUNITY_USER_ADD;
+    }
+    get description() {
+        return 'Adds a user to a specific Microsoft 365 Viva Engage community';
+    }
+    get schema() {
+        return options;
+    }
+    getRefinedSchema(schema) {
+        return schema
+            .refine(options => [options.communityId, options.communityDisplayName, options.entraGroupId].filter(x => x !== undefined).length === 1, {
+            error: 'Specify either communityId, communityDisplayName, or entraGroupId, but not multiple.'
+        })
+            .refine(options => options.communityId || options.communityDisplayName || options.entraGroupId, {
+            error: 'Specify at least one of communityId, communityDisplayName, or entraGroupId.'
+        })
+            .refine(options => options.ids || options.userNames, {
+            error: 'Specify either of ids or userNames.'
+        })
+            .refine(options => typeof options.userNames !== 'undefined' || typeof options.ids !== 'undefined', {
+            error: 'Specify either ids or userNames, but not both.'
+        });
+    }
+    async commandAction(logger, args) {
+        try {
+            if (this.verbose) {
+                await logger.logToStderr('Adding users to community...');
+            }
+            let entraGroupId = args.options.entraGroupId;
+            if (args.options.communityDisplayName) {
+                const community = await vivaEngage.getCommunityByDisplayName(args.options.communityDisplayName, ['groupId']);
+                entraGroupId = community.groupId;
+            }
+            if (args.options.communityId) {
+                const community = await vivaEngage.getCommunityById(args.options.communityId, ['groupId']);
+                entraGroupId = community.groupId;
+            }
+            const userIds = args.options.ids ? formatting.splitAndTrim(args.options.ids) : await entraUser.getUserIdsByUpns(formatting.splitAndTrim(args.options.userNames));
+            const role = args.options.role === 'Member' ? 'members' : 'owners';
+            for (let i = 0; i < userIds.length; i += 400) {
+                const userIdsBatch = userIds.slice(i, i + 400);
+                const requestOptions = {
+                    url: `${this.resource}/v1.0/$batch`,
+                    headers: {
+                        'content-type': 'application/json;odata.metadata=none'
+                    },
+                    responseType: 'json',
+                    data: {
+                        requests: []
+                    }
+                };
+                // only 20 requests per one batch are allowed
+                for (let j = 0; j < userIdsBatch.length; j += 20) {
+                    // only 20 users can be added in one request
+                    const userIdsChunk = userIdsBatch.slice(j, j + 20);
+                    requestOptions.data.requests.push({
+                        id: j + 1,
+                        method: 'PATCH',
+                        url: `/groups/${entraGroupId}`,
+                        headers: {
+                            'content-type': 'application/json;odata.metadata=none'
+                        },
+                        body: {
+                            [`${role}@odata.bind`]: userIdsChunk.map((u) => `${this.resource}/v1.0/directoryObjects/${u}`)
+                        }
+                    });
+                }
+                const res = await request.post(requestOptions);
+                for (const response of res.responses) {
+                    if (response.status !== 204) {
+                        throw response.body;
+                    }
+                }
+            }
+        }
+        catch (err) {
+            this.handleRejectedODataJsonPromise(err);
+        }
+    }
+}
+export default new VivaEngageCommunityUserAddCommand();
+//# sourceMappingURL=engage-community-user-add.js.map

@@ -1,0 +1,42 @@
+import { JsonRule } from '../../JsonRule.js';
+import * as spfxDeps from '../spfx-deps.js';
+export class FN021004_PKG_spfx_devdeps_installed_as_devdeps extends JsonRule {
+    get id() {
+        return 'FN021004';
+    }
+    get title() {
+        return '';
+    }
+    get description() {
+        return '';
+    }
+    get severity() {
+        return 'Required';
+    }
+    get file() {
+        return './package.json';
+    }
+    get resolutionType() {
+        return 'cmd';
+    }
+    visit(project, findings) {
+        if (!project.version ||
+            !project.packageJson ||
+            !project.packageJson.dependencies) {
+            return;
+        }
+        const projectDeps = Object.keys(project.packageJson.dependencies);
+        projectDeps.forEach(dep => {
+            if (!spfxDeps.devDeps.includes(dep)) {
+                return;
+            }
+            const node = this.getAstNodeFromFile(project.packageJson, `dependencies.${dep}`);
+            this.addFindingWithCustomInfo(`${dep} installed as a dependency`, `Package ${dep} is installed as a dependency. Install it as a devDependency instead`, [{
+                    file: this.file,
+                    resolution: `installDev ${dep}@${project.version}`,
+                    position: this.getPositionFromNode(node)
+                }], findings);
+        });
+    }
+}
+//# sourceMappingURL=FN021004_PKG_spfx_devdeps_installed_as_devdeps.js.map

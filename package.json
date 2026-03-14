@@ -23,7 +23,6 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node scripts/write-all-commands.js && node scripts/copy-files.js",
     "build:test": "tsc -p . && node scripts/write-all-commands.js && node scripts/copy-files.js",
-    "prepare": "npm run build",
     "watch": "tsc-watch -p tsconfig.build.json --onSuccess \"node scripts/write-all-commands.js\"",
     "clean": "rimraf ./dist",
     "test": "npm run test:version && npm run lint && npm run test:cov",

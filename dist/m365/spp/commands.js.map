@@ -1,0 +1,1 @@
+{"version":3,"file":"commands.js","sourceRoot":"","sources":["../../../src/m365/spp/commands.ts"],"names":[],"mappings":"AAAA,MAAM,MAAM,GAAW,KAAK,CAAC;AAE7B,eAAe;IACb,kBAAkB,EAAE,GAAG,MAAM,qBAAqB;IAClD,kBAAkB,EAAE,GAAG,MAAM,qBAAqB;IAClD,WAAW,EAAE,GAAG,MAAM,cAAc;IACpC,SAAS,EAAE,GAAG,MAAM,YAAY;IAChC,UAAU,EAAE,GAAG,MAAM,aAAa;IAClC,YAAY,EAAE,GAAG,MAAM,eAAe;CACvC,CAAC"}
