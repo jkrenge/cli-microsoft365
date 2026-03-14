@@ -11,6 +11,13 @@
     "m365_chili": "./dist/chili/index.js",
     "microsoft365": "./dist/index.js"
   },
+  "files": [
+    "LICENSE",
+    "README.md",
+    "allCommands.json",
+    "allCommandsFull.json",
+    "dist"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/pnp/cli-microsoft365.git"
