@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "exclude": [
+    "./**/test-projects",
+    "./**/package-generate/assets",
+    "node_modules",
+    "docs",
+    "**/*.spec.ts",
+    "**/*.test.ts"
+  ]
+}
